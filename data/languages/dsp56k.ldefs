@@ -1,0 +1,13 @@
+<language_definitions>
+  <language processor="Motorola DSP56303"
+    endian="little"
+    size="24"
+    variant="default"
+    version="0.1"
+    slafile="dsp56k.sla"
+    processorspec="dsp56k.pspec"
+    id="DSP56K:LE:24:default">
+  <description>Motorola DSP56303, little endian</description>
+  <compiler name="default" spec="dsp56k.cspec" id="default"/>
+</language>
+</language_definitions> 

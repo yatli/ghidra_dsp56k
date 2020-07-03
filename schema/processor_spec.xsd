@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:include schemaLocation="language_common.xsd"/>
+  <!-- processor_spec files have extension .pspec -->
+  <xs:element name="processor_spec">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="properties"/>
+        <xs:element ref="programcounter"/>
+        <xs:element ref="data_space"/>
+        <xs:element ref="segmented_address"/>
+        <xs:element ref="segmentop"/>
+        <xs:element ref="context_data"/>
+        <xs:element ref="volatile"/>
+        <xs:element ref="incidentalcopy"/>
+        <xs:element ref="jumpassist"/>
+        <xs:element ref="register_data"/>
+        <xs:element ref="default_symbols"/>
+        <xs:element ref="default_memory_blocks"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="programcounter">
+    <xs:complexType>
+      <xs:attribute name="register" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="data_space">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="ptr_wordsize"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="segmented_address">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="context_data" type="context_data_type"/>
+  <xs:element name="volatile">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="memory_tags_type"/>
+      <xs:attribute name="inputop" use="required"/>
+      <xs:attribute name="outputop" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="incidentalcopy">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="jumpassist" type="jumpassist_type"/>
+  <xs:element name="register_data">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" name="register">
+          <xs:complexType>
+            <xs:attribute name="name" use="required"/>
+            <xs:attribute name="rename"/>
+            <xs:attribute name="group"/>
+            <xs:attribute name="hidden" type="boolean_type"/>
+            <xs:attribute name="unused" type="boolean_type"/>
+            <xs:attribute name="vector_lane_sizes"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="default_symbols">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="symbol"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="symbol">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+      <xs:attribute name="address" use="required"/>
+      <xs:attribute name="entry" type="boolean_type"/>
+      <xs:attribute name="type" type="symbol_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="default_memory_blocks">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="memory_block"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="memory_block">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+      <xs:attribute name="start_address" use="required"/>
+      <xs:attribute name="bit_mapped_address"/>
+      <xs:attribute name="mode"/>
+      <xs:attribute name="length"/>
+      <xs:attribute name="initialized" type="boolean_type"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

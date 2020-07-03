@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:include schemaLocation="language_common.xsd"/>
+  <!-- language_definitions files have extension .ldefs -->
+  <xs:element name="language_definitions">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="language"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="language">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="description"/>
+        <xs:element minOccurs="0" ref="truncate_space"/>
+        <xs:element maxOccurs="unbounded" ref="compiler"/>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="external_name"/>
+      </xs:sequence>
+      <xs:attribute name="hidden" type="boolean_type"/>
+      <xs:attribute name="deprecated" type="boolean_type"/>
+      <xs:attribute name="processor" use="required"/>
+      <xs:attribute name="endian" use="required" type="endian_type"/>
+      <xs:attribute name="instructionEndian" type="endian_type"/>
+      <xs:attribute name="size" use="required"/>
+      <xs:attribute name="variant" use="required"/>
+      <xs:attribute name="version" use="required"/>
+      <xs:attribute name="slafile" use="required"/>
+      <xs:attribute name="processorspec" use="required"/>
+      <xs:attribute name="manualindexfile"/>
+      <xs:attribute name="id" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="description" type="xs:string"/>
+  <xs:element name="truncate_space">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="size" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="compiler">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+      <xs:attribute name="spec" use="required"/>
+      <xs:attribute name="id" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="external_name">
+    <xs:complexType>
+      <xs:attribute name="tool" use="required"/>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:include schemaLocation="language_common.xsd"/>
+  <!-- compiler_spec files have extension .cspec -->
+  <xs:attributeGroup name="value_type">
+    <xs:attribute name="value" use="required"/>
+  </xs:attributeGroup>
+  <xs:element name="compiler_spec">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="properties"/>
+        <xs:element ref="data_organization"/>
+        <xs:element ref="callfixup"/>
+        <xs:element ref="callotherfixup"/>
+        <xs:element ref="context_data"/>
+        <xs:element ref="enum"/>
+        <xs:element ref="global"/>
+        <xs:element ref="prefersplit"/>
+        <xs:element ref="aggressivetrim"/>
+        <xs:element ref="nohighptr"/>
+        <xs:element ref="readonly"/>
+        <xs:element ref="stackpointer"/>
+        <xs:element name="returnaddress">
+          <xs:complexType>
+            <xs:group ref="varnode_tags_type"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element ref="funcptr"/>
+        <xs:element ref="spacebase"/>
+        <xs:element ref="deadcodedelay"/>
+        <xs:element ref="segmentop"/>
+        <xs:element ref="default_proto"/>
+        <xs:element ref="prototype"/>
+        <xs:element ref="resolveprototype"/>
+        <xs:element ref="eval_current_prototype"/>
+        <xs:element ref="eval_called_prototype"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="data_organization">
+    <xs:complexType>
+      <xs:all>
+        <xs:element minOccurs="0" ref="absolute_max_alignment"/>
+        <xs:element minOccurs="0" ref="machine_alignment"/>
+        <xs:element minOccurs="0" ref="default_alignment"/>
+        <xs:element minOccurs="0" ref="default_pointer_alignment"/>
+        <xs:element minOccurs="0" ref="pointer_size"/>
+        <xs:element minOccurs="0" ref="pointer_shift"/>
+        <xs:element minOccurs="0" ref="char_type"/>
+        <xs:element minOccurs="0" ref="char_size"/>
+        <xs:element minOccurs="0" ref="wchar_size"/>
+        <xs:element minOccurs="0" ref="short_size"/>
+        <xs:element minOccurs="0" ref="integer_size"/>
+        <xs:element minOccurs="0" ref="long_size"/>
+        <xs:element minOccurs="0" ref="long_long_size"/>
+        <xs:element minOccurs="0" ref="float_size"/>
+        <xs:element minOccurs="0" ref="double_size"/>
+        <xs:element minOccurs="0" ref="long_double_size"/>
+        <xs:element minOccurs="0" ref="size_alignment_map"/>
+        <xs:element minOccurs="0" ref="bitfield_packing"/>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="absolute_max_alignment">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="machine_alignment">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="default_alignment">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="default_pointer_alignment">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="pointer_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="pointer_shift">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="char_type">
+    <xs:complexType>
+      <xs:attribute name="signed" use="required" type="boolean_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="char_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="wchar_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="short_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="integer_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="long_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="long_long_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="float_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="double_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="long_double_size">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="size_alignment_map">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="entry"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="entry">
+    <xs:complexType>
+      <xs:attribute name="size" use="required"/>
+      <xs:attribute name="alignment" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="bitfield_packing">
+    <xs:complexType>
+      <xs:all>
+        <xs:element minOccurs="0" ref="use_MS_convention"/>
+        <xs:element minOccurs="0" ref="type_alignment_enabled"/>
+        <xs:element minOccurs="0" ref="zero_length_boundary"/>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="use_MS_convention">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="type_alignment_enabled">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="zero_length_boundary">
+    <xs:complexType>
+      <xs:attributeGroup ref="value_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="callfixup">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="target"/>
+        <xs:element name="pcode" type="pcode_type"/>
+      </xs:sequence>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="target">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="callotherfixup">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="pcode" type="pcode_type"/>
+      </xs:sequence>
+      <xs:attribute name="targetop" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="context_data" type="context_data_type"/>
+  <xs:element name="enum">
+    <xs:complexType>
+      <xs:attribute name="size" use="required"/>
+      <xs:attribute name="signed" type="boolean_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="global">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="memory_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="prefersplit">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+      <xs:attribute name="style" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="aggressivetrim">
+    <xs:complexType>
+      <xs:attribute name="signext"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="nohighptr">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="memory_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="readonly">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="memory_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="stackpointer">
+    <xs:complexType>
+      <xs:attribute name="register" use="required"/>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="growth">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="negative"/>
+            <xs:enumeration value="positive"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="reversejustify" type="boolean_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="funcptr">
+    <xs:complexType>
+      <xs:attribute name="align" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="spacebase">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+      <xs:attribute name="register" use="required"/>
+      <xs:attribute name="space" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="deadcodedelay">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="delay" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="default_proto">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="prototype"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="prototype" type="prototype_type"/>
+  <xs:element name="resolveprototype">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="model"/>
+      </xs:sequence>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="model">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="eval_current_prototype">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="eval_called_prototype">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:complexType name="pentry_type">
+    <xs:complexContent>
+      <xs:extension base="addr_tags_type">
+        <xs:attribute name="maxsize"/>
+        <xs:attribute name="minsize"/>
+        <xs:attribute name="align"/>
+        <xs:attribute name="metatype"/>
+        <xs:attribute name="trial" type="boolean_type"/>
+        <xs:attribute name="extension"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:complexType name="rangelist_type">
+    <xs:sequence>
+      <xs:element maxOccurs="unbounded" ref="range"/>
+    </xs:sequence>
+  </xs:complexType>
+  <!--
+    Specifies generic calling convention for PrototypeModels
+    
+    unknown: Unspecified convention (default)
+    
+    stdcall: An MS Windows specific calling convention which 
+    			uses the stack to pass all parameters and where
+    			the called-function is responsible for purging the stack.
+    
+    cdecl: A standard/default calling convention which uses 
+    			the stack to pass all parameters and where the
+    			caller is responsible for purging the stack.
+    
+    fastcall: A standard/default calling convention
+    			in which only registers are used to pass parameters
+    
+    thiscall: A C++ instance method calling convention
+    
+  -->
+  <xs:simpleType name="generic_calling_convention_type">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="unknown"/>
+      <xs:enumeration value="stdcall"/>
+      <xs:enumeration value="cdecl"/>
+      <xs:enumeration value="fastcall"/>
+      <xs:enumeration value="thiscall"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:complexType name="prototype_type">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="input">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element minOccurs="0" maxOccurs="unbounded" ref="pentry"/>
+          </xs:sequence>
+          <xs:attribute name="pointermax"/>
+          <xs:attribute name="thisbeforeretpointer"/>
+          <xs:attribute name="killedbycall"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="output">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element minOccurs="0" maxOccurs="unbounded" ref="pentry"/>
+          </xs:sequence>
+          <xs:attribute name="killedbycall"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element ref="returnaddress"/>
+      <xs:element ref="unaffected"/>
+      <xs:element ref="killedbycall"/>
+      <xs:element ref="pcode"/>
+      <xs:element ref="likelytrash"/>
+      <xs:element ref="localrange"/>
+    </xs:choice>
+    <xs:attribute name="extrapop" use="required"/>
+    <xs:attribute name="stackshift" use="required"/>
+    <xs:attribute name="name" use="required"/>
+    <xs:attribute name="type" type="generic_calling_convention_type"/>
+    <xs:attribute name="strategy">
+      <xs:simpleType>
+        <xs:restriction base="xs:token">
+          <xs:enumeration value="standard"/>
+          <xs:enumeration value="register"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="hasthis"/>
+    <xs:attribute name="constructor"/>
+  </xs:complexType>
+  <xs:element name="pentry" type="pentry_type"/>
+  <xs:element name="returnaddress">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="unaffected">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="killedbycall">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="pcode">
+    <xs:complexType>
+      <xs:complexContent>
+        <xs:extension base="pcode_type">
+          <xs:attribute name="inject" use="required"/>
+        </xs:extension>
+      </xs:complexContent>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="likelytrash">
+    <xs:complexType>
+      <xs:group maxOccurs="unbounded" ref="varnode_tags_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="localrange" type="rangelist_type"/>
+</xs:schema>

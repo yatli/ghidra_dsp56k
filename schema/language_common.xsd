@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <!--
+    These are all the possible values for endianness.
+    (Shouldn't ever change unless something complicated comes
+    up)
+  -->
+  <xs:simpleType name="endian_type">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="big"/>
+      <xs:enumeration value="little"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <!--
+    duplicate definition of xs:boolean so we don't need to use
+    that datatype library
+  -->
+  <xs:simpleType name="boolean_type">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="true"/>
+      <xs:enumeration value="false"/>
+      <xs:enumeration value="1"/>
+      <xs:enumeration value="0"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- a key-value properties type for use by processor and compiler specs -->
+  <xs:element name="properties">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="property"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="property">
+    <xs:complexType>
+      <xs:attribute name="key" use="required"/>
+      <xs:attribute name="value" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <!--
+    memory_tags_type is a helper choice for memory-tagging elements
+    such as global, nohighptr, etc.
+  -->
+  <xs:group name="memory_tags_type">
+    <xs:choice>
+      <xs:element ref="register"/>
+      <xs:element ref="range"/>
+    </xs:choice>
+  </xs:group>
+  <!--
+    varnode_tags_type is a helper choice for varnode-tagging elements
+    such as unaffected, constresolve, etc.
+  -->
+  <!--
+    Yatao: complexType -> group
+  -->
+  <xs:group name="varnode_tags_type">
+    <xs:choice>
+      <xs:element ref="register"/>
+      <xs:element ref="varnode"/>
+    </xs:choice>
+  </xs:group>
+  <!-- addr_tags_type is a helper choice for pentry -->
+  <xs:group name="addr_tags_type">
+    <xs:choice>
+      <xs:element ref="register"/>
+      <xs:element ref="addr"/>
+    </xs:choice>
+  </xs:group>
+  <!--
+    Specify a register to tag with a "memory" property
+    such as global, nohighptr, volatile, etc.
+    
+    Maybe this should be named differently from the register
+    in processor_spec.rxg.
+  -->
+  <xs:element name="register">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <!--
+    Unified strong range type where attributes space, first and last are
+    required.
+    
+    NOTE: all range types are now strong; i.e. there is no weak range
+    type any more.  Documentation here has been merged.
+    
+    NOTE AGAIN: all range types are semi-weak,
+    in that if first and last are omitted, the entire space is selected.
+    If you provide first or last, the other is also required, and
+    constrains the space to just that range of addresses.  This type is
+    actually a named element now.
+  -->
+  <xs:element name="range">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="first"/>
+      <xs:attribute name="last"/>
+    </xs:complexType>
+  </xs:element>
+  <!--
+    This replaces some uses of the old addr_type.  Old
+    documentation inserted here just for reference.  (Not)
+    Used in unaffected and probably constresolve too,
+    maybe elsewhere.
+  -->
+  <xs:element name="varnode">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="offset" use="required"/>
+      <xs:attribute name="size" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <!--
+    What pentry uses for calls where parameters don't go
+    in registers.
+  -->
+  <xs:element name="addr">
+    <xs:complexType>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="offset"/>
+      <xs:attribute name="piece1"/>
+      <xs:attribute name="piece2"/>
+      <xs:attribute name="piece3"/>
+      <xs:attribute name="piece4"/>
+    </xs:complexType>
+  </xs:element>
+  <!--
+    NOTE: because RELAX NG does not support type inheritence, this type
+    does NOT inherit from range_type (although that is indeed what it
+    is).
+  -->
+  <xs:complexType name="context_tracked_set_type">
+    <xs:sequence>
+      <xs:element maxOccurs="unbounded" ref="set"/>
+    </xs:sequence>
+    <xs:attribute name="space" use="required"/>
+    <xs:attribute name="first"/>
+    <xs:attribute name="last"/>
+  </xs:complexType>
+  <xs:element name="set">
+    <xs:complexType>
+      <xs:attribute name="name" use="required"/>
+      <xs:attribute name="val" use="required"/>
+      <xs:attribute name="description"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:group name="context_data_type">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="context_set"/>
+        <xs:element ref="tracked_set"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:group>
+  <xs:element name="context_set" type="context_tracked_set_type"/>
+  <xs:element name="tracked_set" type="context_tracked_set_type"/>
+  <xs:simpleType name="symbol_type">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="code"/>
+      <xs:enumeration value="code_ptr"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:attributeGroup name="inject_parameter_type">
+    <xs:attribute name="name" use="required"/>
+    <xs:attribute name="size"/>
+  </xs:attributeGroup>
+  <xs:complexType name="pcode_type">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="input"/>
+        <xs:element ref="output"/>
+      </xs:choice>
+      <xs:element minOccurs="0" ref="body"/>
+    </xs:sequence>
+    <xs:attribute name="paramshift"/>
+    <xs:attribute name="dynamic"/>
+    <xs:attribute name="incidentalcopy"/>
+  </xs:complexType>
+  <xs:element name="input">
+    <xs:complexType>
+      <xs:attributeGroup ref="inject_parameter_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="output">
+    <xs:complexType>
+      <xs:attributeGroup ref="inject_parameter_type"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="body" type="xs:string"/>
+  <xs:element name="segmentop">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="pcode"/>
+        <xs:element minOccurs="0" ref="constresolve"/>
+      </xs:sequence>
+      <xs:attribute name="space" use="required"/>
+      <xs:attribute name="userop"/>
+      <xs:attribute name="farpointer"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="pcode" type="pcode_type"/>
+  <xs:element name="constresolve" type="varnode_tags_type"/>
+  <xs:group name="jumpassist_type">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="case_pcode"/>
+        <xs:element ref="addr_pcode"/>
+        <xs:element ref="default_pcode"/>
+        <xs:element ref="size_pcode"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:group>
+  <xs:element name="case_pcode" type="pcode_type"/>
+  <xs:element name="addr_pcode" type="pcode_type"/>
+  <xs:element name="default_pcode" type="pcode_type"/>
+  <xs:element name="size_pcode" type="pcode_type"/>
+  <xs:attributeGroup name="jumpassist_type">
+    <xs:attribute name="name" use="required"/>
+  </xs:attributeGroup>
+</xs:schema>

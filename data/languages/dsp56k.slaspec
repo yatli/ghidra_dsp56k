@@ -1,0 +1,3624 @@
+# SLA specification for Motorola DSP5630x
+
+define endian=little;
+define alignment=3;
+
+#  FM, section 12.2:
+#  Operand lengths are defined as follows: a byte is 8 bits, a word is 24 bits, a long word is 48 bits,
+#  and an accumulator is 56 bits, as shown in Figure 12-2. The operand size for each instruction is
+#  either explicitly encoded in the instruction or implicitly defined by the instruction operation.
+
+# program memory, 24-bit wide
+define space progmem  type=ram_space      size=3 wordsize=3 default;
+# X memory, 16-bit wide
+define space xmem     type=ram_space      size=3 wordsize=3;
+# Y memory, 16-bit wide
+define space ymem     type=ram_space      size=3 wordsize=3;
+# 16x48-bit Hardware Stack Register File
+define space stackmem type=ram_space      size=3 wordsize=6;
+# Register File
+define space register type=register_space size=3 wordsize=1;
+
+# 10x24-bit ALU registers
+define register offset=0x0   size=3     [ x1 x0 y1 y0   _ a1 a0  _ b1 b0];
+define register offset=0x0   size=6     [ x     y    ];
+define register offset=0xe   size=1                    [a2     ];
+define register offset=0xe   size=7                    [a      ];
+define register offset=0xf   size=6                       [a10 ];
+define register offset=0x17  size=1                             [b2    ];
+define register offset=0x17  size=7                             [b     ];
+define register offset=0x18  size=6                               [b10 ];
+# 24x24-bit AGU registers
+# Rn  Address Registers
+# Nn  Address Offset Registers
+# Mn  Address Modifier Registers
+define register offset=0x100 size=3     [ r7 r6 r5 r4 r3 r2 r1 r0
+                                          n7 n6 n5 n4 n3 n2 n1 n0
+                                          m7 m6 m5 m4 m3 m2 m1 m0 ];
+# Program Control Registers
+define register offset=0x200 size=3     [ omr         sr         ssh ssl sp sc sz pc la lc vba ep];
+define register offset=0x200 size=1     [ com eom scs ccr mr emr ];
+
+# Special Registers
+define register offset=0x300 size=3     [ fv_reg  temp_reg ];
+
+# CCR flags
+# Bug: bitrange compiles, but generates broken xml
+# Workaround: https://github.com/NationalSecurityAgency/ghidra/issues/660#issuecomment-510314559
+# define bitrange sf=ccr[7,1] # scaling bit
+#                 lf=ccr[6,1] # limit bit
+#                 ef=ccr[5,1] # extension bit
+#                 uf=ccr[4,1] # unnormalized bit
+#                 nf=ccr[3,1] # negative bit
+#                 zf=ccr[2,1] # zero bit
+#                 vf=ccr[1,1] # overflow bit
+#                 cf=ccr[0,1] # carry bit
+# ;
+@define sf  "ccr[7,1]" # Scaling bit
+@define lf  "ccr[6,1]" # Limit bit
+@define ef  "ccr[5,1]" # Extension bit
+@define uf  "ccr[4,1]" # Unnormalized bit
+@define nf  "ccr[3,1]" # Negative bit
+@define zf  "ccr[2,1]" # Zero bit
+@define vf  "ccr[1,1]" # Overflow bit
+@define cf  "ccr[0,1]" # Carry bit
+
+# Context variable is defined in the register space.
+# It doesn't represent a processor component, but to specify conditions
+# for instruction decoding.
+define register offset=0x400 size=20     contextreg;
+define context contextreg
+# loopEnd and loopCur are capped at 12-bit because the full 24 bit will freeze the sleigh compiler.
+# loopCaptureStart: workaround that the disassembly section cannot use the inst_next symbol.
+# we defer the capture of loopStart until the next instruction.
+
+  loopCur     = (0,    11) noflow
+
+  loopEnd1    = (12,   23)
+  loopEnd2    = (24,   35)
+  loopEnd3    = (36,   47)
+
+  loopStart1  = (48,   71)
+  loopStart2  = (72,   95)
+  loopStart3  = (96,  119)
+
+  loopActive  = (120, 121)
+  loopCaptureStart = (122, 122)
+
+  repActive  = (123, 123)
+;
+
+#  FM section 12.1:
+#  The DSP56300 core instructions consist of one or two 24-bit words—an operation word and an
+#  optional extension word. This extension word can be either an effective address extension word
+#  or an immediate data extension word. While the extension word occupies the full 24-bit width of
+#  the program memory, only the sixteen Least Significant Bits (LSBs) are relevant for effective
+#  address extension or for immediate data. Therefore, the extension word is effectively sixteen bits
+#  wide.
+#  XXX but we have already seen a lot of instructions where the extension is used as a full 24bit word, for example:
+#  001e: b9 f4 08 39 05 10  	movep	#$100539,X:<<$FFF9
+define token inst_opt(24)
+# opt_non_effective = (16, 23)
+# opt_extension     = (0,  15)
+  opt_extension     = (0,  23)
+  rn_xxxx           = (0,  23)
+  cc1_xxxx         =  (0,  24) signed
+;
+
+
+define token inst_word(24)
+  iiiiiiii                  = (8,  15)
+  arith_iiiiii              = (8,  13)
+  shift_iiiiii              = (1,   6)
+  shift_iiiii               = (1,   5)
+
+  imm8mov_ddddd             = (16, 20)
+  imm8mov_ddddd_word        = (16, 20)
+  imm8mov_ddddd_long        = (16, 20)
+  imm8mov_ddddd_byte        = (16, 20)
+
+  r2rmov_eeeee              = (13, 17)
+  r2rmov_eeeee_word         = (13, 17)
+  r2rmov_eeeee_long         = (13, 17)
+  r2rmov_eeeee_byte         = (13, 17)
+
+  r2rmov_ddddd              = (8,  12)
+  r2rmov_ddddd_word         = (8,  12)
+  r2rmov_ddddd_long         = (8,  12)
+  r2rmov_ddddd_byte         = (8,  12)
+
+  xmov_dd0ddd               = (16, 21)
+  xmov_dd0ddd_word          = (16, 21)
+  xmov_dd0ddd_long          = (16, 21)
+  xmov_dd0ddd_byte          = (16, 21)
+  xmov_aaaaaa               = (8,  13)
+
+  xmov2_dddddd              = (0,   5)
+  xmov2_dddddd_word         = (0,   5)
+  xmov2_dddddd_long         = (0,   5)
+  xmov2_dddddd_byte         = (0,   5)
+  xmov2_aaaaaa              = (11, 16)
+  xmov2_a                   = (6,   6)
+
+  xmov3_dddd                = (0,   3)
+  xmov3_dddd_word           = (0,   3)
+  xmov3_dddd_long           = (0,   3)
+  xmov3_dddd_byte           = (0,   3)
+
+  xrmov_s2                  = (17, 17)
+  xrmov_d2                  = (16, 16)
+  xrmov_ff                  = (18, 19)
+  xrmov_ff_word             = (18, 19)
+  xrmov_ff_long             = (18, 19)
+  xrmov2_d                  = (16, 16)
+  xrmov2_d2                 = (16, 16)
+
+  ymov_dd1ddd               = (16, 21)
+  ymov_dd1ddd_word          = (16, 21)
+  ymov_dd1ddd_long          = (16, 21)
+  ymov_dd1ddd_byte          = (16, 21)
+  ymov_aaaaaa               = (8,  13)
+
+  ymov2_dddddd              = (0,   5)
+  ymov2_dddddd_word         = (0,   5)
+  ymov2_dddddd_long         = (0,   5)
+  ymov2_dddddd_byte         = (0,   5)
+  ymov2_aaaaaa              = (11, 16)
+  ymov2_a                   = (6,   6)
+
+  ymov3_dddd                = (0,   3)
+  ymov3_dddd_word           = (0,   3)
+  ymov3_dddd_long           = (0,   3)
+  ymov3_dddd_byte           = (0,   3)
+
+  yrmov_s                   = (19, 19) #yrmov class 1 S1 'd'
+  yrmov_d                   = (18, 18) #yrmov class 1 D1 'e'
+  yrmov_ff                  = (16, 17)
+  yrmov_ff_word             = (16, 17)
+  yrmov_ff_long             = (16, 17)
+  yrmov2_d                  = (16, 16)
+  yrmov2_d2                 = (16, 16)
+
+  lmov_aaaaaa               = (8,  13)
+  lmov_l0lll                = (16, 19)
+  lmov_op                   = (16, 19)
+  lmov_opname               = (16, 19)
+  lmov_op1                  = (16, 19)
+  lmov_op2                  = (16, 19)
+  lmov_opab1                = (16, 19)
+  lmov_opab2                = (16, 19)
+
+  xymov_op1                 = (18, 19)
+  xymov_op1_word            = (18, 19)
+  xymov_op1_long            = (18, 19)
+  xymov_op2                 = (16, 17)
+  xymov_op2_word            = (16, 17)
+  xymov_op2_long            = (16, 17)
+
+  parcond_cccc              = (8,  11)
+  parcond_name              = (8,  11)
+  cc1_cccc                  = (12, 15)
+  cc1_name                  = (12, 15)
+  cc2_cccc                  = (0,   3)
+  cc2_name                  = (0,   3)
+  cc2_mmm                   = (11, 13)
+  cc2_nn                    = (8,  10)
+  cc2_rn                    = (8,  10)
+
+  jmp_aaaaaaaaaaaa          = (0,  11)
+  jmp_aaaaaa                = (8,  13)
+  jmp_pppppp                = (8,  13)
+  jmp_qqqqqq                = (8,  13)
+  jmp_DDDDDD                = (8,  13)
+  jmp_DDDDDD_word           = (8,  13)
+  jmp_DDDDDD_byte           = (8,  13)
+  jmp_DDDDDD_long           = (8,  13)
+  jmp_S                     = (6,   6)
+  jmp_bbbbb                 = (0,   4)
+
+  movec_d1                  = (0,   4)
+  movec_s1                  = (0,   4)
+  movec_ddddd               = (0,   4)
+  movec_aaaaaa              = (8,  13)
+  movec_eeeeee_byte         = (8,  13)
+  movec_eeeeee_word         = (8,  13)
+  movec_eeeeee_long         = (8,  13)
+  movec_eeeeee              = (8,  13)
+
+  movem_aaaaaa              = (8,  13)
+  movem_dddddd              = (0,   5)
+  movem_dddddd_word         = (0,   5)
+  movem_dddddd_byte         = (0,   5)
+  movem_dddddd_long         = (0,   5)
+
+  movep_dddddd              = (8,  13)
+  movep_dddddd_word         = (8,  13)
+  movep_dddddd_byte         = (8,  13)
+  movep_dddddd_long         = (8,  13)
+  movep_pppppp              = (0,   5)
+  movep_qqqqqq              = (0,   5)
+  movep_qqqqq               = (0,   4)
+  movep_q                   = (6,   6)
+
+  bra_aaaa                  = (6,   9) signed
+  bra_aaaaa                 = (0,   4)
+  bra_rn                    = (8,  10)
+  cmp_iiiiii                = (8,  13)
+  do_hhhh                   = (0,   3)
+  lua_aaa                   = (11, 13) signed
+  lua_aaaa                  = (4,   7)
+  lua_rrr                   = (8,  10)
+  lua_dddd                  = (0,   3)
+  lua_ddddd                 = (0,   4)
+  lua_ddddd_word            = (0,   4)
+  lua_ddddd_long            = (0,   4)
+  lua_ddddd_byte            = (0,   4)
+
+  eax_mm                    = (11, 12)
+  eax_rrr                   = (8,  10)
+  eax_rrr_rn                = (8,  10)
+  eax_rrr_nn                = (8,  10)
+  eay_mm                    = (20, 21)
+  eay_rr_lo_rn              = (13, 14)
+  eay_rr_lo_nn              = (13, 14)
+  eay_rr_hi_rn              = (13, 14)
+  eay_rr_hi_nn              = (13, 14)
+
+  ea1_mmmrrr                = (8,  13)
+  ea1_rrr_rn                = (8,  10)
+  ea1_rrr_nn                = (8,  10)
+  ea1_mmm                   = (11, 13)
+
+  ea3_mmmrrr                = (8,  13)
+  ea3_rrr_rn                = (8,  10)
+  ea3_rrr_nn                = (8,  10)
+  ea3_mmm                   = (11, 13)
+
+  ea4_mmrrr                 = (8,  12)
+  ea4_mm                    = (11, 12)
+  ea4_rrr_rn                = (8,  10)
+  ea4_rrr_nn                = (8,  10)
+  opcode                    = (0,   7)
+
+  inst_23_22                = (22, 23)
+  inst_23_21                = (21, 23)
+  inst_23_20                = (20, 23)
+  inst_23_18                = (18, 23)
+  inst_23_17                = (17, 23)
+  inst_23_16                = (16, 23)
+  inst_23_15                = (15, 23)
+  inst_23_14                = (14, 23)
+  inst_23_13                = (13, 23)
+  inst_23_12                = (12, 23)
+  inst_23_11                = (11, 23)
+  inst_23_10                = (10, 23)
+  inst_23_8                 = (8 , 23)
+  inst_23_7                 = (7 , 23)
+  inst_23_6                 = (6 , 23)
+  inst_23_5                 = (5 , 23)
+  inst_23_4                 = (4 , 23)
+  inst_23_2                 = (2 , 23)
+  inst_23_1                 = (1 , 23)
+  inst_23_0                 = (0,  23)
+  inst_19_18                = (18, 19)
+  inst_15_14                = (14, 15)
+  inst_13_8                 = (8,  13)
+  inst_11_10                = (10, 11)
+  inst_11_7                 = (7,  11)
+  inst_7_6                  = (6,   7)
+  inst_7_5                  = (5,   7)
+  inst_7_4                  = (4,   7)
+  inst_7_3                  = (3,   7)
+  inst_7_2                  = (2,   7)
+  inst_7_0                  = (0,   7)
+  inst_6_5                  = (5,   6)
+  inst_23                   = (23, 23)
+  inst_22                   = (22, 22)
+  inst_19                   = (19, 19)
+  inst_18                   = (18, 18)
+  inst_17                   = (17, 17)
+  inst_16                   = (16, 16)
+  inst_15                   = (15, 15)
+  inst_14                   = (14, 14)
+  inst_11                   = (11, 11)
+  inst_7                    = (7,   7)
+  inst_6                    = (6,   6)
+  inst_5                    = (5,   5)
+  inst_4                    = (4,   4)
+  inst_3_1                  = (1,   3)
+  inst_1_0                  = (0,   1)
+
+  ttt                       = (8,  10)
+  qqq                       = (4,   6)
+  QQ                        = (4,   5)
+  QQQ_op1                   = (4,   6)
+  QQQ_op2                   = (4,   6)
+  QQQQ_op1                  = (0,   3)
+  QQQQ_op2                  = (0,   3)
+  JJJ                       = (4,   6)
+  JJJ_word                  = (4,   6)
+  JJJ_long                  = (4,   6)
+  JJ                        = (4,   5)
+  J                         = (4,   4)
+  d                         = (3,   3)
+  s                         = (3,   3)
+  k                         = (2,   2)
+  k_                        = (2,   2)
+  SSS                       = (1,   3)
+  kkk                       = (0,   2)
+  TTT                       = (0,   2)
+  EE                        = (0,   1)
+  ashift_S2                 = (7,   7)
+  ashift_S2_2               = (4,   4)
+  clb_S                     = (1,   1)
+  D                         = (0,   0)
+;
+
+#  * The source accumulator is B if the
+#  destination accumulator (selected by
+#  the d bit in the opcode) is A, or A if the
+#  destination accumulator is B.
+attach variables [d]                              [a b];
+attach variables [s]                              [b a];
+attach variables [J]                              [x y];
+attach variables [JJ]                             [x0 y0 x1 y1];
+attach variables [JJJ_word]                       [_ _ _ _ x0 y0 x1 y1];
+attach variables [JJJ_long]                       [_ _ x y _  _  _  _ ];
+attach variables [EE]                             [mr ccr com eom];
+attach variables [ashift_S2  ashift_S2_2 
+                  clb_S      D] 
+                                                  [a b];
+attach variables [SSS]                            [_  _  a1 b1 x0 y0 x1 y1 ];
+attach variables [qqq]                            [_  _  a0 b0 x0 y0 x1 y1 ];
+
+attach variables [imm8mov_ddddd_word 
+                  r2rmov_ddddd_word 
+                  lua_ddddd_word 
+                  r2rmov_eeeee_word]
+                                                [_  _  _  _  x0 x1 y0 y1 
+                                                 a0 b0 _  _  a1 b1 _  _
+                                                 r0 r1 r2 r3 r4 r5 r6 r7
+                                                 n0 n1 n2 n3 n4 n5 n6 n7];
+
+attach variables [imm8mov_ddddd_long
+                  r2rmov_ddddd_long
+                  lua_ddddd_long
+                  r2rmov_eeeee_long]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  a  b
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [imm8mov_ddddd_byte
+                  r2rmov_ddddd_byte
+                  lua_ddddd_byte
+                  r2rmov_eeeee_byte]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  a2 b2 _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [ea4_rrr_rn ea1_rrr_rn ea3_rrr_rn]        [r0 r1 r2 r3 r4 r5 r6 r7];
+attach variables [ea4_rrr_nn ea1_rrr_nn ea3_rrr_nn]        [n0 n1 n2 n3 n4 n5 n6 n7];
+
+# No mixed size variable attachment = duplicated variable attach lists
+# And it cannot pick suitable variable based on defined positions (hole=don't select)
+attach variables [xmov_dd0ddd_word]
+                                                [_  _  _  _  x0 x1 y0 y1 
+                                                 _  _  _  _  _  _  _  _
+                                                 a0 b0 _  _  a1 b1 _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 r0 r1 r2 r3 r4 r5 r6 r7
+                                                 _  _  _  _  _  _  _  _
+                                                 n0 n1 n2 n3 n4 n5 n6 n7
+                                                 _  _  _  _  _  _  _  _ ];
+
+attach variables [xmov_dd0ddd_long]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  a  b
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [xmov_dd0ddd_byte]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  a2 b2 _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [ymov_dd1ddd_word]
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  x0 x1 y0 y1 
+                                                 _  _  _  _  _  _  _  _
+                                                 a0 b0 _  _  a1 b1 _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 r0 r1 r2 r3 r4 r5 r6 r7
+                                                 _  _  _  _  _  _  _  _ 
+                                                 n0 n1 n2 n3 n4 n5 n6 n7];
+
+attach variables [ymov_dd1ddd_long]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  a  b
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [ymov_dd1ddd_byte]                   
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  a2 b2 _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+# Table 12-13 Six-Bit Encoding for All On-Chip Registers (see also Table 12-14)
+attach variables [xmov2_dddddd_word ymov2_dddddd_word jmp_DDDDDD_word movec_eeeeee_word movem_dddddd_word movep_dddddd_word]
+                                                [_  _  _  _  x0 x1 y0 y1
+                                                 a0 b0 _  _  a1 b1 _  _
+                                                 r0 r1 r2 r3 r4 r5 r6 r7
+                                                 n0 n1 n2 n3 n4 n5 n6 n7
+                                                 m0 m1 m2 m3 m4 m5 m6 m7
+                                                 _  _  ep _  _  _  _  _
+                                                 vba sc _ _  _  _  _  _
+                                                 sz sr omr sp ssh ssl la lc];
+
+attach variables [xmov2_dddddd_long ymov2_dddddd_long jmp_DDDDDD_long movec_eeeeee_long movem_dddddd_long movep_dddddd_long]
+                                                [_  _  _  _  _  _  _  _ 
+                                                 _  _  _  _  _  _  a  b
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+attach variables [xmov2_dddddd_byte ymov2_dddddd_byte jmp_DDDDDD_byte movec_eeeeee_byte movem_dddddd_byte movep_dddddd_byte]
+                                                [_  _  _  _  _  _  _  _ 
+                                                 _  _  a2 b2 _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  _  _];
+
+# Table 12-16, ALU Registers Encoding
+attach variables [xmov3_dddd_word ymov3_dddd_word]
+                                                [_  _  _  _  x0 x1 y0 y1
+                                                 a0 b0 _  _  a1 b1 _  _];
+attach variables [xmov3_dddd_byte ymov3_dddd_byte]
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  a2 b2 _  _  _  _];
+attach variables [xmov3_dddd_long ymov3_dddd_long]
+                                                [_  _  _  _  _  _  _  _
+                                                 _  _  _  _  _  _  a  b];
+
+attach variables [xrmov_s2]                     [a  b];
+attach variables [xrmov_d2]                     [y0 y1];
+attach variables [xrmov_ff_word]                [x0 x1 _  _];
+attach variables [xrmov_ff_long]                [_  _  a  b];
+attach variables [xrmov2_d xrmov2_d2]           [a  b];
+
+attach variables [yrmov_s]                      [a  b];
+attach variables [yrmov_d]                      [x0 x1];
+attach variables [yrmov_ff_word]                [y0 y1 _  _];
+attach variables [yrmov_ff_long]                [_  _  a  b];
+attach variables [yrmov2_d yrmov2_d2]           [a  b];
+
+attach variables [lmov_op1]                     [a1 b1 x1 y1 _  _  _  _  a1 b1 _  _  _  _  _  _];
+attach variables [lmov_op2]                     [a0 b0 x0 y0 _  _  _  _  a0 b0 _  _  _  _  _  _];
+attach variables [lmov_opab1]                   [_  _  _  _  _  _  _  _  _  _  a  b  _  _  _  _];
+attach variables [lmov_opab2]                   [_  _  _  _  _  _  _  _  _  _  b  a  _  _  _  _];
+attach names     [lmov_opname]                  [a10 b10 x y _  _  _  _  a  b  ab ba _  _  _  _];
+
+attach variables [eax_rrr_rn]                   [r0 r1 r2 r3 r4 r5 r6 r7];
+attach variables [eax_rrr_nn]                   [n0 n1 n2 n3 n4 n5 n6 n7];
+attach variables [eay_rr_lo_rn]                 [r0 r1 r2 r3];
+attach variables [eay_rr_lo_nn]                 [n0 n1 n2 n3];
+attach variables [eay_rr_hi_rn]                 [r4 r5 r6 r7];
+attach variables [eay_rr_hi_nn]                 [n4 n5 n6 n7];
+
+attach variables [xymov_op1_word]               [x0 x1 _  _ ];
+attach variables [xymov_op2_word]               [y0 y1 _  _ ];
+attach variables [xymov_op1_long]               [_  _  a  b ];
+attach variables [xymov_op2_long]               [_  _  a  b ];
+
+attach names [parcond_name cc1_name cc2_name]   [cc_hs ge ne pl nn ec lc gt cs_lo lt eq mi nr es ls le];
+attach variables [cc2_rn]                       [r0 r1 r2 r3 r4 r5 r6 r7];
+attach variables [cc2_nn]                       [n0 n1 n2 n3 n4 n5 n6 n7];
+attach variables [bra_rn]                       [r0 r1 r2 r3 r4 r5 r6 r7];
+
+# Five-Bit Register Encoding 2
+attach variables [movec_d1 movec_s1]
+                                                [m0 m1 m2 m3 m4 m5 m6 m7
+                                                 _  _  ep _  _  _  _  _
+                                                 vba sc _ _  _  _  _  _
+                                                 sz sr omr sp ssh ssl la lc];
+
+# Data ALU Multiply Operands Encoding 1
+attach variables [QQQ_op1]                      [x0 y0 x1 y1 x0 y0 x1 y1];
+attach variables [QQQ_op2]                      [x0 y0 x0 y0 y1 x0 y0 x1];
+# Data ALU Multiply Operands Encoding 2
+attach variables [QQ]                           [y1 x0 y0 x1];
+# Data ALU Multiply Operands Encoding 4
+attach variables [QQQQ_op1]                     [x0 y0 x1 y1 x1 y1 x0 y0 
+                                                 x0 y0 x1 y1 y1 x0 y0 x1];
+attach variables [QQQQ_op2]                     [x0 y0 x0 y0 x1 y1 x1 y1
+                                                 y1 x0 y0 x1 x0 y0 x1 y1];
+
+attach variables [TTT ttt]                      [r0 r1 r2 r3 r4 r5 r6 r7];
+
+attach variables [lua_dddd]                     [r0 r1 r2 r3 r4 r5 r6 r7
+                                                 n0 n1 n2 n3 n4 n5 n6 n7];
+attach variables [lua_rrr]                      [r0 r1 r2 r3 r4 r5 r6 r7];
+
+
+macro acc_write_signed24(dst, src) {
+  local tmp:3 = src;
+  local tmp2:7 = sext(tmp);
+  dst = tmp2 << 24;
+}
+
+macro acc_write_unsigned24(dst, src) {
+  local tmp:3 = src;
+  local tmp2:7 = zext(tmp);
+  dst = tmp2 << 24;
+}
+
+macro acc_write_unsigned8(dst, src) {
+  local tmp:1 = src;
+  local tmp2:7 = zext(tmp);
+  dst = tmp2 << 24;
+}
+
+macro stack_push(ophi, oplo) {
+  local combined:6;
+  combined[24,24]=ssh;
+  combined[0, 24]=ssl;
+  *[stackmem] sp = combined;
+  sp = sp + 1;
+
+  local t1:3=ophi;
+  local t2:3=oplo;
+  ssh=t1;
+  ssl=t2;
+}
+
+macro stack_pop(ophi, oplo) {
+  ophi = ssh;
+  oplo = ssl;
+  sp = sp - 1;
+  local combined:6= *[stackmem] sp;
+  ssh=combined[24,24];
+  ssl=combined[0,24];
+}
+
+macro calc_cond(x, dst) {
+  if
+  ( ($(cf)==0 & x==0b0000)
+  | ($(cf)==1 & x==0b1000)
+  | ($(ef)==0 & x==0b0101)
+  | ($(zf)==1 & x==0b1010)
+  | ($(ef)==1 & x==0b1101)
+  | (($(nf)^$(vf))==0 & x==0b0001)
+  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
+  | ($(lf)==0 & x==0b0110)
+  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
+  | ($(lf)==1 & x==0b1110)
+  | (($(nf)^$(vf))==1 & x==0b1001)
+  | ($(nf)==1 & x==0b1011)
+  | ($(zf)==0 & x==0b0010)
+  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
+  | ($(nf)==0 & x==0b0011)
+  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
+  ) goto dst;
+}
+
+macro calc_cond_call(x, dst) {
+  if (!
+  ( ($(cf)==0 & x==0b0000)
+  | ($(cf)==1 & x==0b1000)
+  | ($(ef)==0 & x==0b0101)
+  | ($(zf)==1 & x==0b1010)
+  | ($(ef)==1 & x==0b1101)
+  | (($(nf)^$(vf))==0 & x==0b0001)
+  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
+  | ($(lf)==0 & x==0b0110)
+  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
+  | ($(lf)==1 & x==0b1110)
+  | (($(nf)^$(vf))==1 & x==0b1001)
+  | ($(nf)==1 & x==0b1011)
+  | ($(zf)==0 & x==0b0010)
+  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
+  | ($(nf)==0 & x==0b0011)
+  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
+  )) goto <calc_cond_call_end>;
+
+  stack_push(inst_next, sr);
+  call dst;
+  <calc_cond_call_end>
+}
+
+# Workaround: feeding inst_next into the macro ain't work
+macro calc_cond_inst_next(x) {
+  if
+  ( ($(cf)==0 & x==0b0000)
+  | ($(cf)==1 & x==0b1000)
+  | ($(ef)==0 & x==0b0101)
+  | ($(zf)==1 & x==0b1010)
+  | ($(ef)==1 & x==0b1101)
+  | (($(nf)^$(vf))==0 & x==0b0001)
+  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
+  | ($(lf)==0 & x==0b0110)
+  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
+  | ($(lf)==1 & x==0b1110)
+  | (($(nf)^$(vf))==1 & x==0b1001)
+  | ($(nf)==1 & x==0b1011)
+  | ($(zf)==0 & x==0b0010)
+  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
+  | ($(nf)==0 & x==0b0011)
+  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
+  ) goto inst_next;
+}
+
+
+macro calc_flags(mask, cbit, vbit, zbit, nbit, ubit, ebit, lbit, sbit) {
+  local cf_cond:1 = mask & 0b00000001;
+  local vf_cond:1 = mask & 0b00000010;
+  local zf_cond:1 = mask & 0b00000100;
+  local nf_cond:1 = mask & 0b00001000;
+  local uf_cond:1 = mask & 0b00010000;
+  local ef_cond:1 = mask & 0b00100000;
+  local lf_cond:1 = mask & 0b01000000;
+  local sf_cond:1 = mask & 0b10000000;
+
+  if (cf_cond == 0) goto <post_cf>;
+  $(cf)=cbit;
+  <post_cf>
+  if (vf_cond == 0) goto <post_vf>;
+  $(vf)=vbit;
+  <post_vf>
+  if (zf_cond == 0) goto <post_zf>;
+  $(zf)=zbit;
+  <post_zf>
+  if (nf_cond == 0) goto <post_nf>;
+  $(nf)=nbit;
+  <post_nf>
+  if (uf_cond == 0) goto <post_uf>;
+  $(uf)=ubit;
+  <post_uf>
+  if (ef_cond == 0) goto <post_ef>;
+  $(ef)=ebit;
+  <post_ef>
+  if (lf_cond == 0) goto <post_lf>;
+  $(lf)=lbit;
+  <post_lf>
+  if (sf_cond == 0) goto <post_sf>;
+  $(sf)=sbit;
+  <post_sf>
+}
+
+define pcodeop proc_pflush;
+define pcodeop proc_round;
+
+
+# Effective Addressing Mode Encoding 1: page 12-18
+ea1:(ea1_rrr_rn)-ea1_rrr_nn                 is ea1_mmm=0b000 & ea1_rrr_rn & ea1_rrr_nn { local tmp:3=ea1_rrr_rn; ea1_rrr_rn = ea1_rrr_rn - ea1_rrr_nn; export tmp; }
+ea1:(ea1_rrr_rn)+ea1_rrr_nn                 is ea1_mmm=0b001 & ea1_rrr_rn & ea1_rrr_nn { local tmp:3=ea1_rrr_rn; ea1_rrr_rn = ea1_rrr_rn + ea1_rrr_nn; export tmp; }
+ea1:(ea1_rrr_rn)-                           is ea1_mmm=0b010 & ea1_rrr_rn              { local tmp:3=ea1_rrr_rn; ea1_rrr_rn = ea1_rrr_rn - 1; export tmp; }
+ea1:(ea1_rrr_rn)+                           is ea1_mmm=0b011 & ea1_rrr_rn              { local tmp:3=ea1_rrr_rn; ea1_rrr_rn = ea1_rrr_rn + 1; export tmp; }
+ea1:(ea1_rrr_rn)                            is ea1_mmm=0b100 & ea1_rrr_rn              { export ea1_rrr_rn; }
+ea1:(ea1_rrr_rn+ea1_rrr_nn)                 is ea1_mmm=0b101 & ea1_rrr_rn & ea1_rrr_nn { local tmp=ea1_rrr_rn+ea1_rrr_nn; export tmp; }
+ea1:-(ea1_rrr_rn)                           is ea1_mmm=0b111 & ea1_rrr_rn              { ea1_rrr_rn = ea1_rrr_rn - 1; export ea1_rrr_rn; }
+ea1:opt_extension                           is ea1_mmmrrr=0b110000; opt_extension      { local tmp:3 = opt_extension; export tmp; }
+ea1_imm24:"#"^opt_extension                 is ea1_mmmrrr=0b110100; opt_extension      { local tmp:3 = opt_extension; export tmp; }
+
+# Effective Addressing Mode Encoding 3: page 12-19
+ea3:(ea3_rrr_rn)-ea3_rrr_nn                 is ea3_mmm=0b000 & ea3_rrr_rn & ea3_rrr_nn { local tmp:3=ea3_rrr_rn; ea3_rrr_rn = ea3_rrr_rn - ea3_rrr_nn; export tmp; }
+ea3:(ea3_rrr_rn)+ea3_rrr_nn                 is ea3_mmm=0b001 & ea3_rrr_rn & ea3_rrr_nn { local tmp:3=ea3_rrr_rn; ea3_rrr_rn = ea3_rrr_rn + ea3_rrr_nn; export tmp; }
+ea3:(ea3_rrr_rn)-                           is ea3_mmm=0b010 & ea3_rrr_rn              { local tmp:3=ea3_rrr_rn; ea3_rrr_rn = ea3_rrr_rn - 1; export tmp; }
+ea3:(ea3_rrr_rn)+                           is ea3_mmm=0b011 & ea3_rrr_rn              { local tmp:3=ea3_rrr_rn; ea3_rrr_rn = ea3_rrr_rn + 1; export tmp; }
+ea3:(ea3_rrr_rn)                            is ea3_mmm=0b100 & ea3_rrr_rn              { export ea3_rrr_rn; }
+ea3:(ea3_rrr_rn+ea3_rrr_nn)                 is ea3_mmm=0b101 & ea3_rrr_rn & ea3_rrr_nn { local tmp=ea3_rrr_rn+ea3_rrr_nn; export tmp; }
+ea3:-(ea3_rrr_rn)                           is ea3_mmm=0b111 & ea3_rrr_rn              { ea3_rrr_rn = ea3_rrr_rn - 1; export ea3_rrr_rn; }
+
+# Effective Addressing Mode Encoding 4: page 12-19, post increment/decrement only.
+ea4:(ea4_rrr_rn)-ea4_rrr_nn                 is ea4_mm=0b00 & ea4_rrr_rn & ea4_rrr_nn   { local tmp=ea4_rrr_rn; ea4_rrr_rn = ea4_rrr_rn - ea4_rrr_nn; export tmp; }
+ea4:(ea4_rrr_rn)+ea4_rrr_nn                 is ea4_mm=0b01 & ea4_rrr_rn & ea4_rrr_nn   { local tmp=ea4_rrr_rn; ea4_rrr_rn = ea4_rrr_rn + ea4_rrr_nn; export tmp; }
+ea4:(ea4_rrr_rn)-                           is ea4_mm=0b10 & ea4_rrr_rn                { local tmp=ea4_rrr_rn; ea4_rrr_rn = ea4_rrr_rn - 1; export tmp; }
+ea4:(ea4_rrr_rn)+                           is ea4_mm=0b11 & ea4_rrr_rn                { local tmp=ea4_rrr_rn; ea4_rrr_rn = ea4_rrr_rn + 1; export tmp; }
+
+# EA4 without updating, for LUA
+ea4_lua:(ea4_rrr_rn)-ea4_rrr_nn             is ea4_mm=0b00 & ea4_rrr_rn & ea4_rrr_nn   { local tmp=ea4_rrr_rn - ea4_rrr_nn; export tmp; }
+ea4_lua:(ea4_rrr_rn)+ea4_rrr_nn             is ea4_mm=0b01 & ea4_rrr_rn & ea4_rrr_nn   { local tmp=ea4_rrr_rn + ea4_rrr_nn; export tmp; }
+ea4_lua:(ea4_rrr_rn)-                       is ea4_mm=0b10 & ea4_rrr_rn                { local tmp=ea4_rrr_rn - 1; export tmp; }
+ea4_lua:(ea4_rrr_rn)+                       is ea4_mm=0b11 & ea4_rrr_rn                { local tmp=ea4_rrr_rn + 1; export tmp; }
+
+# X/Y Effective Addressing Mode
+# Y always select the opposite address register bank than X.
+# If X uses [R0-R3], then Y uses [R4-R7], and vice versa.
+eax:(eax_rrr_rn)+eax_rrr_nn                 is eax_mm=0b01 & eax_rrr_rn & eax_rrr_nn   { local tmp=eax_rrr_rn; eax_rrr_rn = eax_rrr_rn + eax_rrr_nn; export tmp; }
+eax:(eax_rrr_rn)-                           is eax_mm=0b10 & eax_rrr_rn                { local tmp=eax_rrr_rn; eax_rrr_rn = eax_rrr_rn - 1; export tmp; }
+eax:(eax_rrr_rn)+                           is eax_mm=0b11 & eax_rrr_rn                { local tmp=eax_rrr_rn; eax_rrr_rn = eax_rrr_rn + 1; export tmp; }
+eax:(eax_rrr_rn)                            is eax_mm=0b00 & eax_rrr_rn                { export eax_rrr_rn; }
+
+eay:(eay_rr_lo_rn)+eay_rr_lo_nn             is eax_rrr >= 4 & eay_mm=0b01 & eay_rr_lo_rn & eay_rr_lo_nn   { local tmp=eay_rr_lo_rn; eay_rr_lo_rn = eay_rr_lo_rn + eay_rr_lo_nn; export tmp; }
+eay:(eay_rr_lo_rn)-                         is eax_rrr >= 4 & eay_mm=0b10 & eay_rr_lo_rn                  { local tmp=eay_rr_lo_rn; eay_rr_lo_rn = eay_rr_lo_rn - 1; export tmp; }
+eay:(eay_rr_lo_rn)+                         is eax_rrr >= 4 & eay_mm=0b11 & eay_rr_lo_rn                  { local tmp=eay_rr_lo_rn; eay_rr_lo_rn = eay_rr_lo_rn + 1; export tmp; }
+eay:(eay_rr_lo_rn)                          is eax_rrr >= 4 & eay_mm=0b00 & eay_rr_lo_rn                  { export eay_rr_lo_rn; }
+
+eay:(eay_rr_hi_rn)+eay_rr_hi_nn             is eax_rrr <= 3 & eay_mm=0b01 & eay_rr_hi_rn & eay_rr_hi_nn   { local tmp=eay_rr_hi_rn; eay_rr_hi_rn = eay_rr_hi_rn + eay_rr_hi_nn; export tmp; }
+eay:(eay_rr_hi_rn)-                         is eax_rrr <= 3 & eay_mm=0b10 & eay_rr_hi_rn                  { local tmp=eay_rr_hi_rn; eay_rr_hi_rn = eay_rr_hi_rn - 1; export tmp; }
+eay:(eay_rr_hi_rn)+                         is eax_rrr <= 3 & eay_mm=0b11 & eay_rr_hi_rn                  { local tmp=eay_rr_hi_rn; eay_rr_hi_rn = eay_rr_hi_rn + 1; export tmp; }
+eay:(eay_rr_hi_rn)                          is eax_rrr <= 3 & eay_mm=0b00 & eay_rr_hi_rn                  { export eay_rr_hi_rn; }
+
+# Move Instruction Variations
+# No Parallel Data Move
+parMove: is inst_23_8=0b0010000000000000 {}
+
+# Immediate Short Data Move
+imm8mov_reg8:imm8mov_ddddd_byte  is (imm8mov_ddddd=10|imm8mov_ddddd=11) & imm8mov_ddddd_byte { export imm8mov_ddddd_byte; }
+imm8mov_reg24:imm8mov_ddddd_word is (imm8mov_ddddd>3 & imm8mov_ddddd!=10 & imm8mov_ddddd!=11 & imm8mov_ddddd!=14 & imm8mov_ddddd!=15) & imm8mov_ddddd_word { export imm8mov_ddddd_word; }
+imm8mov_reg56:imm8mov_ddddd_long is (imm8mov_ddddd=14|imm8mov_ddddd=15) & imm8mov_ddddd_long { export imm8mov_ddddd_long; }
+
+parMove:"#"^iiiiiiii,imm8mov_reg8  is iiiiiiii & imm8mov_reg8 & inst_23_21=0b001 { imm8mov_reg8=iiiiiiii;  }
+parMove:"#"^iiiiiiii,imm8mov_reg24 is iiiiiiii & imm8mov_reg24 & inst_23_21=0b001 { imm8mov_reg24=iiiiiiii;  }
+parMove:"#"^iiiiiiii,imm8mov_reg56 is iiiiiiii & imm8mov_reg56 & inst_23_21=0b001 { acc_write_unsigned24(imm8mov_reg56, iiiiiiii); }
+
+# Register to Register Data Move
+r2rmov_src8:r2rmov_eeeee_byte is (r2rmov_eeeee=10|r2rmov_eeeee=11) & r2rmov_eeeee_byte { export r2rmov_eeeee_byte; }
+r2rmov_src24:r2rmov_eeeee_word is (r2rmov_eeeee>3 & r2rmov_eeeee!=10 & r2rmov_eeeee!=11 & r2rmov_eeeee!=14 & r2rmov_eeeee!=15) & r2rmov_eeeee_word { export r2rmov_eeeee_word; }
+r2rmov_src56:r2rmov_eeeee_long is (r2rmov_eeeee=14|r2rmov_eeeee=15) & r2rmov_eeeee_long { export r2rmov_eeeee_long; }
+
+r2rmov_dst8:r2rmov_ddddd_byte is (r2rmov_ddddd=10|r2rmov_ddddd=11) & r2rmov_ddddd_byte { export r2rmov_ddddd_byte; }
+r2rmov_dst24:r2rmov_ddddd_word is (r2rmov_ddddd>3 & r2rmov_ddddd!=10 & r2rmov_ddddd!=11 & r2rmov_ddddd!=14 & r2rmov_ddddd!=15) & r2rmov_ddddd_word { export r2rmov_ddddd_word; }
+r2rmov_dst56:r2rmov_ddddd_long is (r2rmov_ddddd=14|r2rmov_ddddd=15) & r2rmov_ddddd_long { export r2rmov_ddddd_long; }
+
+# Note, there are cases when src and dst register size don't match
+parMove:r2rmov_src8,r2rmov_dst8   is r2rmov_src8  & r2rmov_dst8  & inst_23_18=0b001000 { r2rmov_dst8  = r2rmov_src8;        }
+parMove:r2rmov_src8,r2rmov_dst24  is r2rmov_src8  & r2rmov_dst24 & inst_23_18=0b001000 { r2rmov_dst24 = zext(r2rmov_src8);  }
+parMove:r2rmov_src8,r2rmov_dst56  is r2rmov_src8  & r2rmov_dst56 & inst_23_18=0b001000 { acc_write_unsigned8(r2rmov_dst56, r2rmov_src8); }
+parMove:r2rmov_src24,r2rmov_dst8  is r2rmov_src24 & r2rmov_dst8  & inst_23_18=0b001000 { r2rmov_dst8  = r2rmov_src24[0,8];  }
+parMove:r2rmov_src24,r2rmov_dst24 is r2rmov_src24 & r2rmov_dst24 & inst_23_18=0b001000 { r2rmov_dst24 = r2rmov_src24;       }
+parMove:r2rmov_src24,r2rmov_dst56 is r2rmov_src24 & r2rmov_dst56 & inst_23_18=0b001000 { acc_write_signed24(r2rmov_dst56, r2rmov_src24); }
+parMove:r2rmov_src56,r2rmov_dst8  is r2rmov_src56 & r2rmov_dst8  & inst_23_18=0b001000 { r2rmov_dst8  = r2rmov_src56[24,8];  }
+parMove:r2rmov_src56,r2rmov_dst24 is r2rmov_src56 & r2rmov_dst24 & inst_23_18=0b001000 { r2rmov_dst24 = r2rmov_src56[24,24]; }
+parMove:r2rmov_src56,r2rmov_dst56 is r2rmov_src56 & r2rmov_dst56 & inst_23_18=0b001000 { r2rmov_dst56 = r2rmov_src56;       }
+
+# Address Register Update
+parMove:ea4 is ea4 & ea4_rrr_rn & inst_23_13=0b00100000010 { }
+
+# X Memory Data Move
+xmov_reg8:xmov_dd0ddd_byte   is (xmov_dd0ddd=18|xmov_dd0ddd=19) & xmov_dd0ddd_byte { export xmov_dd0ddd_byte; }
+xmov_reg24:xmov_dd0ddd_word  is ( (xmov_dd0ddd>=4 & xmov_dd0ddd<=7) 
+                                | (xmov_dd0ddd>=16 & xmov_dd0ddd<=17) 
+                                | (xmov_dd0ddd>=20 & xmov_dd0ddd<=21) 
+                                | (xmov_dd0ddd>=32 & xmov_dd0ddd<=39) 
+                                | (xmov_dd0ddd>=48 & xmov_dd0ddd<=55) ) & xmov_dd0ddd_word { export xmov_dd0ddd_word; }
+xmov_reg56:xmov_dd0ddd_long  is (xmov_dd0ddd=22|xmov_dd0ddd=23) & xmov_dd0ddd_long { export xmov_dd0ddd_long; }
+xmov_addr6:xmov_aaaaaa       is xmov_aaaaaa { local tmp:3 = xmov_aaaaaa; export tmp; }
+
+xmov2_reg8:xmov2_dddddd_byte  is xmov2_dddddd>=10 & xmov2_dddddd<=11 & xmov2_dddddd_byte { export xmov2_dddddd_byte; }
+xmov2_reg24:xmov2_dddddd_word is ( (xmov2_dddddd>=4 & xmov2_dddddd<=9) 
+                                 | (xmov2_dddddd>=12 & xmov2_dddddd<=13) 
+                                 | (xmov2_dddddd>=16 & xmov2_dddddd<=39) 
+                                 | xmov2_dddddd=42
+                                 | (xmov2_dddddd>=48 & xmov2_dddddd<=49) 
+                                 | (xmov2_dddddd>=56 & xmov2_dddddd<=63) ) & xmov2_dddddd_word { export xmov2_dddddd_word; }
+xmov2_reg56:xmov2_dddddd_long is (xmov2_dddddd=14|xmov2_dddddd=15) & xmov2_dddddd_long { export xmov2_dddddd_long; }
+
+# XXX sext, ref sleigh 7.7.1.5
+xmov2_rn_xxx:offset          is xmov2_aaaaaa & xmov2_a [offset=((xmov2_aaaaaa<<1)+xmov2_a);] { local offset_3:3 = offset; export offset_3; }
+
+xmov3_reg8:xmov3_dddd_byte  is (xmov3_dddd >= 10 & xmov3_dddd <=11) & xmov3_dddd_byte { export xmov3_dddd_byte; }
+xmov3_reg24:xmov3_dddd_word is ((xmov3_dddd >= 4 & xmov3_dddd <=9) | (xmov3_dddd >=12 & xmov3_dddd <=13)) & xmov3_dddd_word { export xmov3_dddd_word; }
+xmov3_reg56:xmov3_dddd_long is (xmov3_dddd >= 14 & xmov3_dddd <=15) & xmov3_dddd_long { export xmov3_dddd_long; }
+
+parMove:"x:"^ea1,xmov_reg8                          is (xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1                                    { xmov_reg8=*[xmem]ea1; }
+parMove:xmov_reg8,"x:"^ea1                          is (xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=0) ... & ea1                                    { *[xmem]:3 ea1=xmov_reg8; }
+parMove:ea1_imm24,xmov_reg8                         is (xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                              { xmov_reg8=ea1_imm24:1; }
+parMove:"x:"^xmov_addr6,xmov_reg8                   is xmov_addr6 & xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                   { xmov_reg8=*[xmem] xmov_addr6; }
+parMove:xmov_reg8,"x:"^xmov_addr6                   is xmov_addr6 & xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                   { *[xmem]:3 xmov_addr6=xmov_reg8; }
+inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg8       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx             { xmov2_reg8=*[xmem](ea1_rrr_rn+rn_xxxx); }
+inst:"move" xmov2_reg8, "x:"^(ea1_rrr_rn + rn_xxxx)       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx             { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg8; }
+inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg8  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx   { xmov3_reg8=*[xmem](ea1_rrr_rn+xmov2_rn_xxx); }
+inst:"move" xmov3_reg8, "x:"^(ea1_rrr_rn + xmov2_rn_xxx)  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx   { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg8; }
+
+parMove:"x:"^ea1,xmov_reg24                         is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1                                   { xmov_reg24=*[xmem]:3 ea1; }
+parMove:xmov_reg24,"x:"^ea1                         is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=0) ... & ea1                                   { *[xmem]:3 ea1=xmov_reg24; }
+parMove:ea1_imm24,xmov_reg24                        is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { xmov_reg24=ea1_imm24; }
+parMove:"x:"^xmov_addr6,xmov_reg24                  is xmov_addr6 & xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                  { xmov_reg24=*[xmem]:3 xmov_addr6; }
+parMove:xmov_reg24,"x:"^xmov_addr6                  is xmov_addr6 & xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                  { *[xmem]:3 xmov_addr6=xmov_reg24; }
+inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg24      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { xmov2_reg24=*[xmem]:3 (ea1_rrr_rn+rn_xxxx); }
+inst:"move" xmov2_reg24, "x:"^(ea1_rrr_rn + rn_xxxx)      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3 (ea1_rrr_rn+rn_xxxx)=xmov2_reg24; }
+inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg24 is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { xmov3_reg24=*[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx); }
+inst:"move" xmov3_reg24, "x:"^(ea1_rrr_rn + xmov2_rn_xxx) is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg24; }
+
+parMove:"x:"^ea1,xmov_reg56                         is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1                                   { acc_write_signed24(xmov_reg56, *[xmem]ea1); }
+parMove:xmov_reg56,"x:"^ea1                         is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=0) ... & ea1                                   { *[xmem]:3 ea1=xmov_reg56[24,24]; }
+parMove:ea1_imm24,xmov_reg56                        is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { acc_write_signed24(xmov_reg56, ea1_imm24); }
+parMove:"x:"^xmov_addr6,xmov_reg56                  is xmov_addr6 & xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                  { acc_write_signed24(xmov_reg56, *[xmem]:3 xmov_addr6); }
+parMove:xmov_reg56,"x:"^xmov_addr6                  is xmov_addr6 & xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                  { *[xmem]:3 xmov_addr6=xmov_reg56[24,24]; }
+inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg56      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(xmov2_reg56, *[xmem]:3(ea1_rrr_rn+rn_xxxx)); }
+inst:"move" xmov2_reg56, "x:"^(ea1_rrr_rn + rn_xxxx)      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg56[24,24]; }
+inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg56 is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { acc_write_signed24(xmov3_reg56, *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)); }
+inst:"move" xmov3_reg56, "x:"^(ea1_rrr_rn + xmov2_rn_xxx) is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg56[24,24]; }
+
+# X Memory And Register Data Move
+xrmov_op1_24:xrmov_ff_word is xrmov_ff < 2 & xrmov_ff_word { export xrmov_ff_word; }
+xrmov_op1_56:xrmov_ff_long is xrmov_ff > 1 & xrmov_ff_long { export xrmov_ff_long; }
+
+parMove:"x:"^ea1,xrmov_op1_24 xrmov_s2, xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { xrmov_op1_24=*[xmem]:3 ea1; xrmov_d2=xrmov_s2[24,24]; }
+parMove:xrmov_op1_24,"x:"^ea1 xrmov_s2, xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_24; xrmov_d2=xrmov_s2[24,24]; }
+parMove:"x:"^ea1,xrmov_op1_56 xrmov_s2, xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { acc_write_signed24(xrmov_op1_56,*[xmem]:3 ea1); xrmov_d2=xrmov_s2[24,24]; }
+parMove:xrmov_op1_56,"x:"^ea1 xrmov_s2, xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_56[24,24]; xrmov_d2=xrmov_s2[24,24]; }
+parMove:xrmov2_d,"x:"^ea1 "x0"^,xrmov2_d2           is (xrmov2_d & xrmov2_d2 & inst_23_17=0b0000100 & inst_15_14=0b00) ... & ea1 { *[xmem]:3 ea1=xrmov2_d[24,24]; acc_write_signed24(xrmov2_d,x0); }
+
+# Y Memory Data Move
+ymov_reg8:ymov_dd1ddd_byte   is (ymov_dd1ddd=26|ymov_dd1ddd=27) & ymov_dd1ddd_byte { export ymov_dd1ddd_byte; }
+ymov_reg24:ymov_dd1ddd_word  is ( (ymov_dd1ddd>=12 & ymov_dd1ddd<=15) 
+                                | (ymov_dd1ddd>=24 & ymov_dd1ddd<=25) 
+                                | (ymov_dd1ddd>=28 & ymov_dd1ddd<=29) 
+                                | (ymov_dd1ddd>=40 & ymov_dd1ddd<=47) 
+                                | (ymov_dd1ddd>=56 & ymov_dd1ddd<=63) ) & ymov_dd1ddd_word { export ymov_dd1ddd_word; }
+ymov_reg56:ymov_dd1ddd_long  is (ymov_dd1ddd=30|ymov_dd1ddd=31) & ymov_dd1ddd_long { export ymov_dd1ddd_long; }
+ymov_addr6:ymov_aaaaaa       is ymov_aaaaaa { local tmp:3 = ymov_aaaaaa; export tmp; }
+
+ymov2_reg8:ymov2_dddddd_byte  is ymov2_dddddd>=10 & ymov2_dddddd<=11 & ymov2_dddddd_byte { export ymov2_dddddd_byte; }
+ymov2_reg24:ymov2_dddddd_word is ( (ymov2_dddddd>=4 & ymov2_dddddd<=9) 
+                                 | (ymov2_dddddd>=12 & ymov2_dddddd<=13) 
+                                 | (ymov2_dddddd>=16 & ymov2_dddddd<=39) 
+                                 | ymov2_dddddd=42
+                                 | (ymov2_dddddd>=48 & ymov2_dddddd<=49) 
+                                 | (ymov2_dddddd>=56 & ymov2_dddddd<=63) ) & ymov2_dddddd_word { export ymov2_dddddd_word; }
+ymov2_reg56:ymov2_dddddd_long is (ymov2_dddddd=14|ymov2_dddddd=15) & ymov2_dddddd_long { export ymov2_dddddd_long; }
+
+# XXX sext, ref sleigh 7.7.1.5
+ymov2_rn_xxx:offset          is ymov2_aaaaaa & ymov2_a [offset=((ymov2_aaaaaa<<1)+ymov2_a);] { local offset_3:3 = offset; export offset_3; }
+
+ymov3_reg8:ymov3_dddd_byte  is (ymov3_dddd >= 10 & ymov3_dddd <=11) & ymov3_dddd_byte { export ymov3_dddd_byte; }
+ymov3_reg24:ymov3_dddd_word is ((ymov3_dddd >= 4 & ymov3_dddd <=9) | (ymov3_dddd >=12 & ymov3_dddd <=13)) & ymov3_dddd_word { export ymov3_dddd_word; }
+ymov3_reg56:ymov3_dddd_long is (ymov3_dddd >= 14 & ymov3_dddd <=15) & ymov3_dddd_long { export ymov3_dddd_long; }
+
+parMove:"y:"^ea1,ymov_reg8                          is (ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1                                    { ymov_reg8=*[ymem]ea1; }
+parMove:ymov_reg8,"y:"^ea1                          is (ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=0) ... & ea1                                    { *[ymem]:3 ea1=ymov_reg8; }
+parMove:ea1_imm24,ymov_reg8                         is (ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                              { ymov_reg8=ea1_imm24:1; }
+parMove:"y:"^ymov_addr6,ymov_reg8                   is ymov_addr6 & ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                   { ymov_reg8=*[ymem] ymov_addr6; }
+parMove:ymov_reg8,"y:"^ymov_addr6                   is ymov_addr6 & ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                   { *[ymem]:3 ymov_addr6=ymov_reg8; }
+inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg8       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx             { ymov2_reg8=*[ymem](ea1_rrr_rn+rn_xxxx); }
+inst:"move" ymov2_reg8, "y:"^(ea1_rrr_rn + rn_xxxx)       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx             { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg8; }
+inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg8  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx   { ymov3_reg8=*[ymem](ea1_rrr_rn+ymov2_rn_xxx); }
+inst:"move" ymov3_reg8, "y:"^(ea1_rrr_rn + ymov2_rn_xxx)  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx   { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg8; }
+
+parMove:"y:"^ea1,ymov_reg24                         is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1                                   { ymov_reg24=*[ymem]:3 ea1; }
+parMove:ymov_reg24,"y:"^ea1                         is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=0) ... & ea1                                   { *[ymem]:3 ea1=ymov_reg24; }
+parMove:ea1_imm24,ymov_reg24                        is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { ymov_reg24=ea1_imm24; }
+parMove:"y:"^ymov_addr6,ymov_reg24                  is ymov_addr6 & ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                  { ymov_reg24=*[ymem]:3 ymov_addr6; }
+parMove:ymov_reg24,"y:"^ymov_addr6                  is ymov_addr6 & ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                  { *[ymem]:3 ymov_addr6=ymov_reg24; }
+inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg24      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { ymov2_reg24=*[ymem]:3 (ea1_rrr_rn+rn_xxxx); }
+inst:"move" ymov2_reg24, "y:"^(ea1_rrr_rn + rn_xxxx)      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3 (ea1_rrr_rn+rn_xxxx)=ymov2_reg24; }
+inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg24 is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { ymov3_reg24=*[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx); }
+inst:"move" ymov3_reg24, "y:"^(ea1_rrr_rn + ymov2_rn_xxx) is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg24; }
+
+parMove:"y:"^ea1,ymov_reg56                         is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1                                   { acc_write_signed24(ymov_reg56, *[ymem]:3 ea1); }
+parMove:ymov_reg56,"y:"^ea1                         is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=0) ... & ea1                                   { *[ymem]:3 ea1=ymov_reg56[24,24]; }
+parMove:ea1_imm24,ymov_reg56                        is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { acc_write_signed24(ymov_reg56, ea1_imm24); }
+parMove:"y:"^ymov_addr6,ymov_reg56                  is ymov_addr6 & ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                  { acc_write_signed24(ymov_reg56,*[ymem]:3 ymov_addr6); }
+parMove:ymov_reg56,"y:"^ymov_addr6                  is ymov_addr6 & ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                  { *[ymem]:3 ymov_addr6=ymov_reg56[24,24]; }
+inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg56      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(ymov2_reg56,*[ymem]:3(ea1_rrr_rn+rn_xxxx)); }
+inst:"move" ymov2_reg56, "y:"^(ea1_rrr_rn + rn_xxxx)      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg56[24,24]; }
+inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg56 is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { acc_write_signed24(ymov3_reg56,*[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)); }
+inst:"move" ymov3_reg56, "y:"^(ea1_rrr_rn + ymov2_rn_xxx) is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg56[24,24]; }
+
+# y Memory And Register Data Move
+yrmov_op1_24:yrmov_ff_word is yrmov_ff < 2 & yrmov_ff_word { export yrmov_ff_word; }
+yrmov_op1_56:yrmov_ff_long is yrmov_ff > 1 & yrmov_ff_long { export yrmov_ff_long; }
+ 
+parMove:yrmov_s, yrmov_d "y:"^ea1,yrmov_op1_24       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; yrmov_op1_24=*[ymem]:3 ea1; }
+parMove:yrmov_s, yrmov_d yrmov_op1_24,"y:"^ea1       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]:3 ea1=yrmov_op1_24; }
+parMove:yrmov_s, yrmov_d "y:"^ea1,yrmov_op1_56       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; acc_write_signed24(yrmov_op1_56,*[ymem]ea1); }
+parMove:yrmov_s, yrmov_d yrmov_op1_56,"y:"^ea1       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]ea1=yrmov_op1_56[24,24]; }
+parMove:"y0"^,yrmov2_d2 yrmov2_d,"y:"^ea1            is (yrmov2_d & yrmov2_d2 & inst_23_17=0b0000100 & inst_15_14=0b10) ... & ea1 { acc_write_signed24(yrmov2_d,y0); *[ymem]:3 ea1=yrmov2_d[24,24]; }
+
+# Long Memory Data Move
+# Loads partial data from XDB+YDB, concat to 48-bit long word
+
+lmov_addr6:lmov_aaaaaa       is lmov_aaaaaa { local tmp:3 = lmov_aaaaaa; export tmp; }
+
+parMove:"L:"^ea1, lmov_opname                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { lmov_op1=*[xmem]ea1; lmov_op2=*[ymem]ea1; }
+parMove:lmov_opname, "L:"^ea1                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]ea1=lmov_op1; *[ymem]ea1=lmov_op2; }
+parMove:"L:"^ea1, lmov_opname                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { acc_write_signed24(lmov_opab1,*[xmem]:3 ea1); acc_write_signed24(lmov_opab2,*[ymem]:3 ea1); }
+parMove:lmov_opname, "L:"^ea1                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=lmov_opab1[24,24]; *[ymem]:3 ea1=lmov_opab2[24,24]; }
+
+parMove:"L:"^lmov_addr6, lmov_opname                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { lmov_op1=*[xmem]lmov_addr6; lmov_op2=*[ymem]lmov_addr6; }
+parMove:lmov_opname, "L:"^lmov_addr6                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]lmov_addr6=lmov_op1; *[ymem]lmov_addr6=lmov_op2; }
+parMove:"L:"^lmov_addr6, lmov_opname                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { acc_write_signed24(lmov_opab1,*[xmem]:3 lmov_addr6); acc_write_signed24(lmov_opab2,*[ymem]:3 lmov_addr6); }
+parMove:lmov_opname, "L:"^lmov_addr6                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]:3 lmov_addr6=lmov_opab1[24,24]; *[ymem]:3 lmov_addr6=lmov_opab2[24,24]; }
+
+# XY Memory Data Move
+# W is inst_15 for X
+# w is inst_22 for Y
+
+# W=1 w=1
+parMove:"x:"^eax,xymov_op1_word "y:"^eay,xymov_op2_word  is eax & eay & xymov_op1_word & xymov_op2_word & inst_23=1 & inst_15=1 & inst_22=1 & xymov_op1 <=1 & xymov_op2 <=1 { xymov_op1_word=*[xmem]:3 eax; xymov_op2_word=*[ymem]:3 eay; }
+parMove:"x:"^eax,xymov_op1_word "y:"^eay,xymov_op2_long  is eax & eay & xymov_op1_word & xymov_op2_long & inst_23=1 & inst_15=1 & inst_22=1 & xymov_op1 <=1 & xymov_op2 >=2 { xymov_op1_word=*[xmem]:3 eax; acc_write_signed24(xymov_op2_long,*[ymem]eay); }
+parMove:"x:"^eax,xymov_op1_long "y:"^eay,xymov_op2_word  is eax & eay & xymov_op1_long & xymov_op2_word & inst_23=1 & inst_15=1 & inst_22=1 & xymov_op1 >=2 & xymov_op2 <=1 { acc_write_signed24(xymov_op1_long,*[xmem]eax); xymov_op2_word=*[ymem]:3 eay; }
+parMove:"x:"^eax,xymov_op1_long "y:"^eay,xymov_op2_long  is eax & eay & xymov_op1_long & xymov_op2_long & inst_23=1 & inst_15=1 & inst_22=1 & xymov_op1 >=2 & xymov_op2 >=2 { acc_write_signed24(xymov_op1_long,*[xmem]eax); acc_write_signed24(xymov_op2_long,*[ymem]eay); }
+
+# W=0 w=1
+parMove:xymov_op1_word,"x:"^eax "y:"^eay,xymov_op2_word  is eax & eay & xymov_op1_word & xymov_op2_word & inst_23=1 & inst_15=0 & inst_22=1 & xymov_op1 <=1 & xymov_op2 <=1 { *[xmem]:3 eax=xymov_op1_word; xymov_op2_word=*[ymem]:3eay; }
+parMove:xymov_op1_word,"x:"^eax "y:"^eay,xymov_op2_long  is eax & eay & xymov_op1_word & xymov_op2_long & inst_23=1 & inst_15=0 & inst_22=1 & xymov_op1 <=1 & xymov_op2 >=2 { *[xmem]:3 eax=xymov_op1_word; acc_write_signed24(xymov_op2_long,*[ymem]eay); }
+parMove:xymov_op1_long,"x:"^eax "y:"^eay,xymov_op2_word  is eax & eay & xymov_op1_long & xymov_op2_word & inst_23=1 & inst_15=0 & inst_22=1 & xymov_op1 >=2 & xymov_op2 <=1 { *[xmem]:3 eax=xymov_op1_long[24,24]; xymov_op2_word=*[ymem]:3 eay; }
+parMove:xymov_op1_long,"x:"^eax "y:"^eay,xymov_op2_long  is eax & eay & xymov_op1_long & xymov_op2_long & inst_23=1 & inst_15=0 & inst_22=1 & xymov_op1 >=2 & xymov_op2 >=2 { *[xmem]:3 eax=xymov_op1_long[24,24]; acc_write_signed24(xymov_op2_long,*[ymem]eay); }
+
+# W=1 w=0
+parMove:"x:"^eax,xymov_op1_word xymov_op2_word,"y:"^eay  is eax & eay & xymov_op1_word & xymov_op2_word & inst_23=1 & inst_15=1 & inst_22=0 & xymov_op1 <=1 & xymov_op2 <=1 { xymov_op1_word=*[xmem]:3 eax; *[ymem]:3 eay=xymov_op2_word; }
+parMove:"x:"^eax,xymov_op1_word xymov_op2_long,"y:"^eay  is eax & eay & xymov_op1_word & xymov_op2_long & inst_23=1 & inst_15=1 & inst_22=0 & xymov_op1 <=1 & xymov_op2 >=2 { xymov_op1_word=*[xmem]:3 eax; *[ymem]:3 eay=xymov_op2_long[24,24]; }
+parMove:"x:"^eax,xymov_op1_long xymov_op2_word,"y:"^eay  is eax & eay & xymov_op1_long & xymov_op2_word & inst_23=1 & inst_15=1 & inst_22=0 & xymov_op1 >=2 & xymov_op2 <=1 { acc_write_signed24(xymov_op1_long,*[xmem]eax); *[ymem]:3 eay=xymov_op2_word; }
+parMove:"x:"^eax,xymov_op1_long xymov_op2_long,"y:"^eay  is eax & eay & xymov_op1_long & xymov_op2_long & inst_23=1 & inst_15=1 & inst_22=0 & xymov_op1 >=2 & xymov_op2 >=2 { acc_write_signed24(xymov_op1_long,*[xmem]eax); *[ymem]:3 eay=xymov_op2_long[24,24]; }
+
+# W=0 w=0
+parMove:xymov_op1_word,"x:"^eax xymov_op2_word,"y:"^eay  is eax & eay & xymov_op1_word & xymov_op2_word & inst_23=1 & inst_15=0 & inst_22=0 & xymov_op1 <=1 & xymov_op2 <=1 { *[xmem]:3 eax=xymov_op1_word; *[ymem]:3 eay=xymov_op2_word; }
+parMove:xymov_op1_word,"x:"^eax xymov_op2_long,"y:"^eay  is eax & eay & xymov_op1_word & xymov_op2_long & inst_23=1 & inst_15=0 & inst_22=0 & xymov_op1 <=1 & xymov_op2 >=2 { *[xmem]:3 eax=xymov_op1_word; *[ymem]:3 eay=xymov_op2_long[24,24]; }
+parMove:xymov_op1_long,"x:"^eax xymov_op2_word,"y:"^eay  is eax & eay & xymov_op1_long & xymov_op2_word & inst_23=1 & inst_15=0 & inst_22=0 & xymov_op1 >=2 & xymov_op2 <=1 { *[xmem]:3 eax=xymov_op1_long[24,24]; *[ymem]:3 eay=xymov_op2_word; }
+parMove:xymov_op1_long,"x:"^eax xymov_op2_long,"y:"^eay  is eax & eay & xymov_op1_long & xymov_op2_long & inst_23=1 & inst_15=0 & inst_22=0 & xymov_op1 >=2 & xymov_op2 >=2 { *[xmem]:3 eax=xymov_op1_long[24,24]; *[ymem]:3 eay=xymov_op2_long[24,24]; }
+
+# parCond overrides parMove.
+# The two contructs (cond/move) have to be defined separately because the semantics happen at different phases.
+# parMove is always executed before the instruction main body and thus can update the operands before main body execution.
+# parCond is always evaluated before the instruction, and thus conditionally execute.
+parMove: is (inst_23_12=0b001000000010 | inst_23_12=0b001000000011) {}
+parCond: "IF"^parcond_name is (inst_23_12=0b001000000010 | inst_23_12=0b001000000011) & parcond_name & parcond_cccc {
+#TODO condition flags
+  local cond_val:2 = parcond_cccc;
+# see x86 sleigh ia.sinc for more macro tricks...
+  calc_cond_inst_next(cond_val);
+}
+# fallback to no parCond
+parCond: is epsilon {}
+
+movec_a6: movec_aaaaaa is movec_aaaaaa { local tmp:3=movec_aaaaaa; export tmp; }
+
+# TODO ssh stack operations, page 370 (13-130)
+
+movec_reg8:movec_eeeeee_byte  is movec_eeeeee>=10 & movec_eeeeee<=11 & movec_eeeeee_byte { export movec_eeeeee_byte; }
+movec_reg24:movec_eeeeee_word is ( (movec_eeeeee>=4 & movec_eeeeee<=9) 
+                                 | (movec_eeeeee>=12 & movec_eeeeee<=13) 
+                                 | (movec_eeeeee>=16 & movec_eeeeee<=39) 
+                                 | movec_eeeeee=42
+                                 | (movec_eeeeee>=48 & movec_eeeeee<=49) 
+                                 | (movec_eeeeee>=56 & movec_eeeeee<=63) ) & movec_eeeeee_word { export movec_eeeeee_word; }
+movec_reg56:movec_eeeeee_long is (movec_eeeeee=14|movec_eeeeee=15) & movec_eeeeee_long { export movec_eeeeee_long; }
+
+
+
+inst:"movec" "x:"^ea1, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[xmem]:3 ea1; }
+inst:"movec" "y:"^ea1, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[ymem]:3 ea1; }
+inst:"movec" movec_s1, "x:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b001 & movec_s1 & movec_ddddd) ... & ea1 { *[xmem]:3 ea1=movec_s1; }
+inst:"movec" movec_s1, "y:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b011 & movec_s1 & movec_ddddd) ... & ea1 { *[ymem]:3 ea1=movec_s1; }
+
+inst:"movec" ea1_imm24, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
+inst:"movec" ea1_imm24, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
+
+inst:"movec" "x:"^movec_a6, movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b001 & movec_d1 & movec_ddddd { movec_d1=*[xmem]:3 movec_a6; }
+inst:"movec" "y:"^movec_a6, movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b011 & movec_d1 & movec_ddddd { movec_d1=*[ymem]:3 movec_a6; }
+inst:"movec" movec_s1, "x:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b001 & movec_s1 & movec_ddddd { *[xmem]:3 movec_a6=movec_s1; }
+inst:"movec" movec_s1, "y:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b011 & movec_s1 & movec_ddddd { *[ymem]:3 movec_a6=movec_s1; }
+
+inst:"movec" movec_s1, movec_reg8  is inst_23_14=0b0000010001 & movec_s1 & movec_reg8  & inst_7_5=0b101 { movec_reg8         = movec_s1[0,8]; }
+inst:"movec" movec_s1, movec_reg24 is inst_23_14=0b0000010001 & movec_s1 & movec_reg24 & inst_7_5=0b101 { movec_reg24        = movec_s1; }
+inst:"movec" movec_s1, movec_reg56 is inst_23_14=0b0000010001 & movec_s1 & movec_reg56 & inst_7_5=0b101 { movec_reg56[24,24] = movec_s1; }
+inst:"movec" movec_reg8, movec_d1  is inst_23_14=0b0000010011 & movec_d1 & movec_reg8  & inst_7_5=0b101 { movec_d1[0,8]      = movec_reg8; }
+inst:"movec" movec_reg24, movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg24 & inst_7_5=0b101 { movec_d1           = movec_reg24; }
+inst:"movec" movec_reg56, movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg56 & inst_7_5=0b101 { movec_d1           = movec_reg56[24,24]; }
+
+inst:"movec" "#"^iiiiiiii, movec_d1 is inst_23_16=0b00000101 & iiiiiiii & inst_7_5=0b101 & movec_d1 { movec_d1 = iiiiiiii; }
+
+movem_a6: movem_aaaaaa is movem_aaaaaa { local tmp:3=movem_aaaaaa; export tmp; }
+movem_reg8:movem_dddddd_byte  is movem_dddddd>=10 & movem_dddddd<=11 & movem_dddddd_byte { export movem_dddddd_byte; }
+movem_reg24:movem_dddddd_word is ( (movem_dddddd>=4 & movem_dddddd<=9) 
+                                 | (movem_dddddd>=12 & movem_dddddd<=13) 
+                                 | (movem_dddddd>=16 & movem_dddddd<=39) 
+                                 | movem_dddddd=42
+                                 | (movem_dddddd>=48 & movem_dddddd<=49) 
+                                 | (movem_dddddd>=56 & movem_dddddd<=63) ) & movem_dddddd_word { export movem_dddddd_word; }
+movem_reg56:movem_dddddd_long is (movem_dddddd=14|movem_dddddd=15) & movem_dddddd_long { export movem_dddddd_long; }
+
+inst:"movem" movem_reg8, "p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { *[progmem]:1 ea1=movem_reg8; }
+inst:"movem" movem_reg24,"p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg24) ... & ea1 { *[progmem]:3 ea1=movem_reg24; }
+inst:"movem" movem_reg56,"p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg56) ... & ea1 { *[progmem]:3 ea1=movem_reg56[24,24]; }
+
+inst:"movem" "p:"^ea1, movem_reg8  is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { movem_reg8 =*[progmem]:1 ea1; }
+inst:"movem" "p:"^ea1, movem_reg24 is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg24) ... & ea1 { movem_reg24=*[progmem]:3 ea1; }
+inst:"movem" "p:"^ea1, movem_reg56 is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg56) ... & ea1 { acc_write_signed24(movem_reg56,*[progmem]:3 ea1); }
+
+inst:"movem" movem_reg8, "p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg8  & movem_a6 { *[progmem]:1 movem_a6=movem_reg8; }
+inst:"movem" movem_reg24,"p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg24 & movem_a6 { *[progmem]:3 movem_a6=movem_reg24; }
+inst:"movem" movem_reg56,"p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg56 & movem_a6 { *[progmem]:3 movem_a6=movem_reg56[24,24]; }
+
+inst:"movem" "p:"^movem_a6, movem_reg8  is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg8  & movem_a6 { movem_reg8 =*[progmem]:1 movem_a6; }
+inst:"movem" "p:"^movem_a6, movem_reg24 is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg24 & movem_a6 { movem_reg24=*[progmem]:3 movem_a6; }
+inst:"movem" "p:"^movem_a6, movem_reg56 is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg56 & movem_a6 { acc_write_signed24(movem_reg56,*[progmem]:3 movem_a6); }
+
+movep_pp:io_addr is movep_pppppp [io_addr=0xFFFFC0+movep_pppppp;] { local tmp:3=io_addr; export tmp; }
+movep_qq:io_addr is movep_qqqqqq [io_addr=0xFFFFB0+movep_qqqqqq;] { local tmp:3=io_addr; export tmp; }
+movep_qq2:io_addr is movep_qqqqq & movep_q [io_addr=0xFFFFB0 + movep_qqqqq + (movep_q<<5);] { local tmp:3=io_addr; export tmp; }
+movep_reg8:movep_dddddd_byte  is movep_dddddd>=10 & movep_dddddd<=11 & movep_dddddd_byte { export movep_dddddd_byte; }
+movep_reg24:movep_dddddd_word is ( (movep_dddddd>=4 & movep_dddddd<=9) 
+                                 | (movep_dddddd>=12 & movep_dddddd<=13) 
+                                 | (movep_dddddd>=16 & movep_dddddd<=39) 
+                                 | movep_dddddd=42
+                                 | (movep_dddddd>=48 & movep_dddddd<=49) 
+                                 | (movep_dddddd>=56 & movep_dddddd<=63) ) & movep_dddddd_word { export movep_dddddd_word; }
+movep_reg56:movep_dddddd_long is (movep_dddddd=14|movep_dddddd=15) & movep_dddddd_long { export movep_dddddd_long; }
+
+# S (6) is memory space
+# s (16) is peripheral space
+
+# X: or Y: Reference (high I/O address)
+inst:"movep" "x:<<"^movep_pp,"x:"^ea1 is (inst_23_14=0b0000100001 & inst_7_6=0b10 & movep_pp) ... & ea1 { *[xmem]:3 ea1=*[xmem]:3 movep_pp; }
+inst:"movep" "x:<<"^movep_pp,"y:"^ea1 is (inst_23_14=0b0000100001 & inst_7_6=0b11 & movep_pp) ... & ea1 { *[ymem]:3 ea1=*[xmem]:3 movep_pp; }
+inst:"movep" "y:<<"^movep_pp,"x:"^ea1 is (inst_23_14=0b0000100101 & inst_7_6=0b10 & movep_pp) ... & ea1 { *[xmem]:3 ea1=*[ymem]:3 movep_pp; }
+inst:"movep" "y:<<"^movep_pp,"y:"^ea1 is (inst_23_14=0b0000100101 & inst_7_6=0b11 & movep_pp) ... & ea1 { *[ymem]:3 ea1=*[ymem]:3 movep_pp; }
+
+inst:"movep" "x:"^ea1,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b10 & movep_pp) ... & ea1 { *[xmem]:3 movep_pp=*[xmem]:3 ea1; }
+inst:"movep" "y:"^ea1,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b11 & movep_pp) ... & ea1 { *[xmem]:3 movep_pp=*[ymem]:3 ea1; }
+inst:"movep" "x:"^ea1,"y:<<"^movep_pp is (inst_23_14=0b0000100111 & inst_7_6=0b10 & movep_pp) ... & ea1 { *[ymem]:3 movep_pp=*[xmem]:3 ea1; }
+inst:"movep" "y:"^ea1,"y:<<"^movep_pp is (inst_23_14=0b0000100111 & inst_7_6=0b11 & movep_pp) ... & ea1 { *[ymem]:3 movep_pp=*[ymem]:3 ea1; }
+
+# X: or Y: Reference (low I/O address)
+inst:"movep" "x:<<"^movep_qq,"x:"^ea1 is (inst_23_14=0b0000011101 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 ea1=*[xmem]:3 movep_qq; }
+inst:"movep" "x:<<"^movep_qq,"y:"^ea1 is (inst_23_14=0b0000011101 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 ea1=*[xmem]:3 movep_qq; }
+inst:"movep" "x:"^ea1,"x:<<"^movep_qq is (inst_23_14=0b0000011111 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 movep_qq=*[xmem]:3 ea1; }
+inst:"movep" "y:"^ea1,"x:<<"^movep_qq is (inst_23_14=0b0000011111 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[xmem]:3 movep_qq=*[ymem]:3 ea1; }
+
+inst:"movep" "y:<<"^movep_qq,"x:"^ea1 is (inst_23_14=0b0000011100 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 ea1=*[ymem]:3 movep_qq; }
+inst:"movep" "y:<<"^movep_qq,"y:"^ea1 is (inst_23_14=0b0000011100 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 ea1=*[ymem]:3 movep_qq; }
+inst:"movep" "x:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[xmem]:3 ea1; }
+inst:"movep" "y:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[ymem]:3 ea1; }
+
+# P: Reference (high I/O address)
+inst:"movep" "p:"^ea1,"x:<<"^movep_pp is (inst_23_14=0b0000100001 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[xmem]:3 movep_pp=*[progmem]:3 ea1; }
+inst:"movep" "p:"^ea1,"y:<<"^movep_pp is (inst_23_14=0b0000100101 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[ymem]:3 movep_pp=*[progmem]:3 ea1; }
+inst:"movep" "x:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100011 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_pp; }
+inst:"movep" "y:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100111 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_pp; }
+
+# P: Reference (low I/O address)
+inst:"movep" "p:"^ea1,"x:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 movep_qq=*[progmem]:3 ea1; }
+inst:"movep" "p:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[progmem]:3 ea1; }
+inst:"movep" "x:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000011 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_qq; }
+inst:"movep" "y:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000011 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_qq; }
+
+# X: or Y: Reference (high I/O address) -- imm24
+inst:"movep" ea1_imm24,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b10 & movep_pp) ... & ea1_imm24 { *[xmem]:3 movep_pp=ea1_imm24; }
+inst:"movep" ea1_imm24,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b11 & movep_pp) ... & ea1_imm24 { *[xmem]:3 movep_pp=ea1_imm24; }
+inst:"movep" ea1_imm24,"y:<<"^movep_pp is (inst_23_14=0b0000100111 & inst_7_6=0b10 & movep_pp) ... & ea1_imm24 { *[ymem]:3 movep_pp=ea1_imm24; }
+inst:"movep" ea1_imm24,"y:<<"^movep_pp is (inst_23_14=0b0000100111 & inst_7_6=0b11 & movep_pp) ... & ea1_imm24 { *[ymem]:3 movep_pp=ea1_imm24; }
+
+# X: or Y: Reference (low I/O address) -- imm24
+inst:"movep" ea1_imm24,"x:<<"^movep_qq is (inst_23_14=0b0000011111 & inst_7_6=0b00 & movep_qq) ... & ea1_imm24 { *[xmem]:3 movep_qq=ea1_imm24; }
+inst:"movep" ea1_imm24,"x:<<"^movep_qq is (inst_23_14=0b0000011111 & inst_7_6=0b01 & movep_qq) ... & ea1_imm24 { *[xmem]:3 movep_qq=ea1_imm24; }
+
+inst:"movep" ea1_imm24,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b00 & movep_qq) ... & ea1_imm24 { *[ymem]:3 movep_qq=ea1_imm24; }
+inst:"movep" ea1_imm24,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b01 & movep_qq) ... & ea1_imm24 { *[ymem]:3 movep_qq=ea1_imm24; }
+
+# P: Reference (high I/O address) -- imm24
+inst:"movep" ea1_imm24,"x:<<"^movep_pp is (inst_23_14=0b0000100001 & inst_7_6=0b01 & movep_pp) ... & ea1_imm24 { *[xmem]:3 movep_pp=ea1_imm24; }
+inst:"movep" ea1_imm24,"y:<<"^movep_pp is (inst_23_14=0b0000100101 & inst_7_6=0b01 & movep_pp) ... & ea1_imm24 { *[ymem]:3 movep_pp=ea1_imm24; }
+
+# P: Reference (low I/O address) -- imm24
+inst:"movep" ea1_imm24,"x:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b00 & movep_qq) ... & ea1_imm24 { *[xmem]:3 movep_qq=ea1_imm24; }
+inst:"movep" ea1_imm24,"y:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b01 & movep_qq) ... & ea1_imm24 { *[ymem]:3 movep_qq=ea1_imm24; }
+
+# Register reference (high I/O address)
+inst:"movep" movep_reg8,"x:"^movep_pp  is inst_23_14=0b0000100011 & inst_7_6=0b00 & movep_reg8  & movep_pp { *[xmem]:1 movep_pp=movep_reg8; }
+inst:"movep" movep_reg8,"y:"^movep_pp  is inst_23_14=0b0000100111 & inst_7_6=0b00 & movep_reg8  & movep_pp { *[ymem]:1 movep_pp=movep_reg8; }
+inst:"movep" "x:"^movep_pp,movep_reg8  is inst_23_14=0b0000100001 & inst_7_6=0b00 & movep_reg8  & movep_pp { movep_reg8=*[xmem]:1 movep_pp; }
+inst:"movep" "y:"^movep_pp,movep_reg8  is inst_23_14=0b0000100101 & inst_7_6=0b00 & movep_reg8  & movep_pp { movep_reg8=*[ymem]:1 movep_pp; }
+
+inst:"movep" movep_reg24,"x:"^movep_pp is inst_23_14=0b0000100011 & inst_7_6=0b00 & movep_reg24 & movep_pp { *[xmem]:3 movep_pp=movep_reg24; }
+inst:"movep" movep_reg24,"y:"^movep_pp is inst_23_14=0b0000100111 & inst_7_6=0b00 & movep_reg24 & movep_pp { *[ymem]:3 movep_pp=movep_reg24; }
+inst:"movep" "x:"^movep_pp,movep_reg24 is inst_23_14=0b0000100001 & inst_7_6=0b00 & movep_reg24 & movep_pp { movep_reg24=*[xmem]:3 movep_pp; }
+inst:"movep" "y:"^movep_pp,movep_reg24 is inst_23_14=0b0000100101 & inst_7_6=0b00 & movep_reg24 & movep_pp { movep_reg24=*[ymem]:3 movep_pp; }
+
+inst:"movep" movep_reg56,"x:"^movep_pp is inst_23_14=0b0000100011 & inst_7_6=0b00 & movep_reg56 & movep_pp { *[xmem]:3 movep_pp=movep_reg56[24,24]; }
+inst:"movep" movep_reg56,"y:"^movep_pp is inst_23_14=0b0000100111 & inst_7_6=0b00 & movep_reg56 & movep_pp { *[ymem]:3 movep_pp=movep_reg56[24,24]; }
+inst:"movep" "x:"^movep_pp,movep_reg56 is inst_23_14=0b0000100001 & inst_7_6=0b00 & movep_reg56 & movep_pp { acc_write_signed24(movep_reg56,*[xmem]:3 movep_pp); }
+inst:"movep" "y:"^movep_pp,movep_reg56 is inst_23_14=0b0000100101 & inst_7_6=0b00 & movep_reg56 & movep_pp { acc_write_signed24(movep_reg56,*[ymem]:3 movep_pp); }
+
+# Register reference (low I/O address)
+inst:"movep" movep_reg8,"x:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=1 & inst_5=0 & movep_reg8 & movep_qq2 { *[xmem]:1 movep_qq2=movep_reg8; }
+inst:"movep" movep_reg8,"y:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=0 & inst_5=1 & movep_reg8 & movep_qq2 { *[ymem]:1 movep_qq2=movep_reg8; }
+inst:"movep" "x:"^movep_qq2,movep_reg8 is inst_23_14=0b0000010001 & inst_7=1 & inst_5=0 & movep_reg8 & movep_qq2 { movep_reg8=*[xmem]:1 movep_qq2; }
+inst:"movep" "y:"^movep_qq2,movep_reg8 is inst_23_14=0b0000010001 & inst_7=0 & inst_5=1 & movep_reg8 & movep_qq2 { movep_reg8=*[ymem]:1 movep_qq2; }
+
+inst:"movep" movep_reg24,"x:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=1 & inst_5=0 & movep_reg24 & movep_qq2 { *[xmem]:3 movep_qq2=movep_reg24; }
+inst:"movep" movep_reg24,"y:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=0 & inst_5=1 & movep_reg24 & movep_qq2 { *[ymem]:3 movep_qq2=movep_reg24; }
+inst:"movep" "x:"^movep_qq2,movep_reg24 is inst_23_14=0b0000010001 & inst_7=1 & inst_5=0 & movep_reg24 & movep_qq2 { movep_reg24=*[xmem]:3 movep_qq2; }
+inst:"movep" "y:"^movep_qq2,movep_reg24 is inst_23_14=0b0000010001 & inst_7=0 & inst_5=1 & movep_reg24 & movep_qq2 { movep_reg24=*[ymem]:3 movep_qq2; }
+
+inst:"movep" movep_reg56,"x:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=1 & inst_5=0 & movep_reg56 & movep_qq2 { *[xmem]:3 movep_qq2=movep_reg56[24,24]; }
+inst:"movep" movep_reg56,"y:"^movep_qq2 is inst_23_14=0b0000010011 & inst_7=0 & inst_5=1 & movep_reg56 & movep_qq2 { *[ymem]:3 movep_qq2=movep_reg56[24,24]; }
+inst:"movep" "x:"^movep_qq2,movep_reg56 is inst_23_14=0b0000010001 & inst_7=1 & inst_5=0 & movep_reg56 & movep_qq2 { acc_write_signed24(movep_reg56,*[xmem]:3 movep_qq2); }
+inst:"movep" "y:"^movep_qq2,movep_reg56 is inst_23_14=0b0000010001 & inst_7=0 & inst_5=1 & movep_reg56 & movep_qq2 { acc_write_signed24(movep_reg56,*[ymem]:3 movep_qq2); }
+
+
+jmp_reg8:jmp_DDDDDD_byte  is jmp_DDDDDD>=10 & jmp_DDDDDD<=11 & jmp_DDDDDD_byte { export jmp_DDDDDD_byte; }
+jmp_reg24:jmp_DDDDDD_word is ( (jmp_DDDDDD>=4 & jmp_DDDDDD<=9) 
+                                 | (jmp_DDDDDD>=12 & jmp_DDDDDD<=13) 
+                                 | (jmp_DDDDDD>=16 & jmp_DDDDDD<=39) 
+                                 | jmp_DDDDDD=42
+                                 | (jmp_DDDDDD>=48 & jmp_DDDDDD<=49) 
+                                 | (jmp_DDDDDD>=56 & jmp_DDDDDD<=63) ) & jmp_DDDDDD_word { export jmp_DDDDDD_word; }
+jmp_reg56:jmp_DDDDDD_long is (jmp_DDDDDD=14|jmp_DDDDDD=15) & jmp_DDDDDD_long { export jmp_DDDDDD_long; }
+
+# taken from x64 ia.sinc, rel8 -- goto expects a LOAD, somehow.
+# all these non-register jmp addresses must comply with this rule to get correct addresses.
+jmp_addr24: opt_extension is opt_extension { export *[progmem]:3 opt_extension; }
+jmp_addr12: jmp_aaaaaaaaaaaa is jmp_aaaaaaaaaaaa { export *[progmem]:3 jmp_aaaaaaaaaaaa; }
+jmp_ea24:opt_extension is ea1_mmmrrr=0b110000; opt_extension { export *[progmem]:3 opt_extension; }
+# TODO still have issues with register-based jump.
+# export like above = exception, workaround is to export, and use goto [jmp_ea3] to get it compile
+# the semantic is problematic, though.
+jmp_ea3:ea3 is ea3 { local tmp:3 = ea3; export tmp; }
+
+mpy_sgn: is k=0 & k_ { local tmp:1=k_; export tmp; }
+mpy_sgn:"-" is k=1 & k_ { local tmp:1=k_; export tmp; }
+
+lua_reg8:lua_ddddd_byte is (lua_ddddd=10|lua_ddddd=11) & lua_ddddd_byte { export lua_ddddd_byte; }
+lua_reg24:lua_ddddd_word is (lua_ddddd>3 & lua_ddddd!=10 & lua_ddddd!=11 & lua_ddddd!=14 & lua_ddddd!=15) & lua_ddddd_word { export lua_ddddd_word; }
+lua_reg56:lua_ddddd_long is (lua_ddddd=14|lua_ddddd=15) & lua_ddddd_long { export lua_ddddd_long; }
+
+bra_addr9:bra_addr is bra_aaaa & bra_aaaaa [bra_addr=inst_start+(bra_aaaa<<5)+bra_aaaaa;] { export *[progmem]:3 bra_addr; }
+bra_addr24:dest is opt_extension [dest=inst_start+opt_extension;] { export *[progmem]:3 dest; }
+bra_addr_rn:bra_rn is bra_rn { local dest=inst_start+bra_rn; export *[progmem]:3 dest; }
+
+do_imm12: data is iiiiiiii & do_hhhh [ data=(do_hhhh<<8)+iiiiiiii; ] { local tmp:3 = data; export tmp; }
+
+# 0 J J J D k k k
+
+parinst:"abs" d is inst_7=0 & JJJ=0b010 & kkk=0b110 & d & inst_23_12 {
+  d = abs(d);
+  calc_flags(0b11111110, 0, 0, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+# ---------------- ADD ---------------------
+
+parinst:"adc" J, d is inst_7_5=0b001 & kkk=0b001 & J & d {
+  local tmp1:7=zext(J);
+  local tmp2:7=zext($(cf));
+  local sum:7=tmp1+tmp2;
+  calc_flags(0b11111111, scarry(sum, d), carry(sum, d), (sum+d)==0, (sum+d) s< 0, 0, 0, 0, 0);
+  d = sum + d;
+}
+
+parinst:"add" JJJ_word, d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0 {
+  local op:7=sext(JJJ_word);
+  op = op << 24;
+  calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
+  d = op + d;
+}
+
+parinst:"add" JJJ_long, d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0 {
+  local op:7=sext(JJJ_long);
+  calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
+  d = op + d;
+}
+
+parinst:"add" s,d is s & d & inst_7=0 & JJJ=1 & kkk=0 {
+  calc_flags(0b11111111, scarry(s, d), carry(s, d), (s+d)==0, (s+d) s< 0, 0, 0, 0, 0);
+  d = d + s;
+}
+
+inst:"add" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0 & arith_iiiiii & d {
+  local op:7=arith_iiiiii;
+  op = op << 24;
+  calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
+  d = d + op;
+}
+
+inst:"add" "#"^opt_extension, d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b000 & d ; opt_extension {
+  local tmp:3=opt_extension;
+  local op:7=sext(tmp);
+  op = op << 24;
+  calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
+  d = d + op;
+}
+
+parinst:"addl" s, d is inst_7=0 & JJJ=0b001 & kkk=0b010 & s & d {
+  local op:7=d*2;
+  calc_flags(0b11111111, scarry(s, op), carry(d, d) | carry(s, op), (op+s)==0, (op+s) s< 0, 0, 0, 0, 0);
+  d = s + op;
+}
+
+parinst:"addr" s, d is inst_7_4=0b0000 & kkk=0b010 & s & d {
+  local op:7=d/2;
+  calc_flags(0b11111111, scarry(s, op), carry(s, op), (op+s)==0, (op+s) s< 0, 0, 0, 0, 0);
+  d = s + op;
+}
+
+parinst:"and" JJ,d is inst_7_6=0b01 & kkk=0b110 & d & JJ {
+  d[24,24]=d[24,24] & JJ;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"and" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b110 & arith_iiiiii & d {
+  d[24,24]=d[24,24] & arith_iiiiii;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"and" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b110 & d; opt_extension {
+  d[24,24]=d[24,24] & opt_extension;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"andi" "#"^iiiiiiii, EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b101110 & EE { EE = EE & iiiiiiii; }
+
+# -------------------- Arithmetic Shift ------------------------
+
+parinst:"asl" d is inst_7_4=0b0011 & d & kkk=0b010 {
+  local cbit:1=d[55,1];
+  d = d << 1;
+  local vbit:1=(d[55,1] != $(cf)); 
+  calc_flags(0b11111111, cbit, vbit, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+inst:"asl" "#"^shift_iiiiii, ashift_S2, D is inst_23_8=0b0000110000011101 & ashift_S2 & shift_iiiiii & D {
+  local tmp=ashift_S2 << (shift_iiiiii-1);
+  local tmp2=D[55,1];
+  local cbit:1 = tmp[55,1];
+  D = ashift_S2 << shift_iiiiii;
+  local vbit:1 = (tmp2 != D[55,1]);
+  calc_flags(0b11111111, cbit, vbit, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+inst:"asl" SSS, ashift_S2_2, D is inst_23_5=0b0000110000011110010 & SSS & ashift_S2_2 & shift_iiiiii & D {
+  local ii:1=zext(SSS[0,6]);
+  local tmp1:7=ashift_S2_2 << (ii-1);
+  local tmp2=D[55,1];
+  local cbit:1 = tmp1[55,1];
+  D = ashift_S2_2 << ii;
+  local vbit:1 = (tmp2 != D[55,1]);
+  calc_flags(0b11111111, cbit, vbit, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+parinst:"asr" d is inst_7_4=0b0010 & d & kkk=0b010 {
+  local cbit:1 = d[0,1];
+  d = d s>> 1;
+  calc_flags(0b11111111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+inst:"asr" "#"^shift_iiiiii, ashift_S2, D is inst_23_8=0b0000110000011100 & ashift_S2 & shift_iiiiii & D {
+  local tmp=ashift_S2 s>> (shift_iiiiii-1);
+  local cbit:1 = tmp[0,1];
+  D = ashift_S2 s>> shift_iiiiii;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+inst:"asr" SSS, ashift_S2_2, D is inst_23_5=0b0000110000011110011 & SSS & ashift_S2_2 & shift_iiiiii & D {
+  local ii:1=zext(SSS[0,6]);
+  local tmp=ashift_S2_2 s>> (ii-1);
+  local cbit:1 = tmp[0,1];
+  D = ashift_S2_2 s>> ii;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+# documentation is wrong.
+# bne addr24
+# 0D        10        42
+# 00001101  00010000  01000010
+#                         CCCC
+# doesn't match the doc class 1 bcc.
+# more like class 3 with bitfield variations
+
+# ------------------- BCC ---------------------
+
+inst:"b"^cc2_name bra_addr24 is inst_23_4=0b00001101000100000100 & cc2_cccc & cc2_name; bra_addr24 {
+  local cond:2=cc2_cccc;
+  calc_cond(cond, bra_addr24);
+}
+
+inst:"b"^cc1_name bra_addr9 is inst_23_16=0b00000101 & inst_11_10=0b01 & inst_5=0 & cc1_cccc & cc1_name & bra_addr9 {
+  local cond:2=cc1_cccc;
+  calc_cond(cond, bra_addr9);
+}
+
+inst:"b"^cc2_name cc2_rn is inst_23_11=0b0000110100011 & cc2_rn & inst_7_4=0b0100 & cc2_name & cc2_cccc {
+  local addr:3=inst_start+cc2_rn;
+  local cond:2=cc2_cccc;
+  calc_cond(cond, addr);
+}
+
+# TODO bchg
+
+# ------------------- BRA ----------------------
+
+inst:"bra" bra_addr24 is inst_23_0=0b000011010001000011000000; bra_addr24 { goto bra_addr24; }
+inst:"bra" bra_addr9  is inst_23_10=0b00000101000011 & inst_5=0 & bra_addr9 { goto bra_addr9; }
+inst:"bra" bra_addr_rn is inst_23_11=0b0000110100011 & inst_7_0=0b11000000 & bra_addr_rn { goto bra_addr_rn; }
+
+# -------------------- BCLR -------------------------
+
+inst:"bclr" "#"^jmp_bbbbb,"x:"^ea1 is (inst_23_14=0b0000101001 & inst_7_5=0b000 & jmp_bbbbb) ... & ea1 {
+  local v:3=~(1<<jmp_bbbbb);
+  local m:3=*[xmem]:3 ea1 & v;
+  *[xmem]:3 ea1 = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"y:"^ea1 is (inst_23_14=0b0000101001 & inst_7_5=0b010 & jmp_bbbbb) ... & ea1  {
+  local v:3=~(1<<jmp_bbbbb);
+  local m:3=*[ymem]:3 ea1 & v;
+  *[ymem]:3 ea1 = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa is inst_23_14=0b0000101000 & inst_7_5=0b000 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa is inst_23_14=0b0000101000 & inst_7_5=0b010 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000101010 & inst_7_5=0b000 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0; ] {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000101010 & inst_7_5=0b010 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0; ] {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000000100 & inst_7_5=0b000 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80; ] {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000000100 & inst_7_5=0b010 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80; ] {
+  local v:3=~(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,jmp_reg8 is inst_23_14=0b0000101011 & inst_7_5=0b010 & jmp_reg8 & jmp_bbbbb  {
+  local v:3=~(1<<jmp_bbbbb);
+  jmp_reg8 = jmp_reg8 & v[0,8];
+}
+
+inst:"bclr" "#"^jmp_bbbbb,jmp_reg24 is inst_23_14=0b0000101011 & inst_7_5=0b010 & jmp_reg24 & jmp_bbbbb  {
+  local v:3=~(1<<jmp_bbbbb);
+  jmp_reg24 = jmp_reg24 & v;
+}
+
+inst:"bclr" "#"^jmp_bbbbb,jmp_reg56 is inst_23_14=0b0000101011 & inst_7_5=0b010 & jmp_reg56 & jmp_bbbbb  {
+  local v:3=~(1<<jmp_bbbbb);
+  jmp_reg56[24,24] = jmp_reg56[24,24] & v;
+}
+
+# ------------------------- BRCLR -------------------------
+
+inst:"brclr" "#"^jmp_bbbbb,"x:"^ea3,bra_addr24 is inst_23_14=0b0000110010 & ea3 & inst_7_5=0b000 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"y:"^ea3,bra_addr24 is inst_23_14=0b0000110010 & ea3 & inst_7_5=0b010 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110010 & inst_7_5=0b100 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110010 & inst_7_5=0b110 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b000 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b010 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b000 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b010 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,jmp_reg8,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b100 & jmp_reg8 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,jmp_reg24,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b100 & jmp_reg24 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto  bra_addr24;
+}
+
+inst:"brclr" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b100 & jmp_reg56 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto  bra_addr24;
+}
+
+# ------------------- BSCC ---------------------
+
+inst:"bs"^cc2_name bra_addr24 is inst_23_4=0b00001101000100000000 & cc2_cccc & cc2_name; bra_addr24 {
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, bra_addr24);
+}
+
+inst:"bs"^cc1_name bra_addr9 is inst_23_16=0b00000101 & inst_11_10=0b00 & inst_5=0 & cc1_cccc & cc1_name & bra_addr9 {
+  local cond:2=cc1_cccc;
+  calc_cond_call(cond, bra_addr9);
+}
+
+inst:"bs"^cc2_name cc2_rn is inst_23_11=0b0000110100011 & cc2_rn & inst_7_4=0b0000 & cc2_name & cc2_cccc {
+  local addr:3=inst_start+cc2_rn;
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, addr);
+}
+
+# -------------- BRSET ------------------
+inst:"brset" "#"^jmp_bbbbb,"x:"^ea3,bra_addr24 is inst_23_14=0b0000110010 & ea3 & inst_7_5=0b001 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"y:"^ea3,bra_addr24 is inst_23_14=0b0000110010 & ea3 & inst_7_5=0b011 & jmp_bbbbb; bra_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110010 & inst_7_5=0b101 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110010 & inst_7_5=0b111 & jmp_bbbbb & jmp_aaaaaa; bra_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b001 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b011 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b001 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b011 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,jmp_reg8,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b101 & jmp_reg8 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,jmp_reg24,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b101 & jmp_reg24 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto bra_addr24;
+}
+
+inst:"brset" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110011 & inst_7_5=0b101 & jmp_reg56 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto bra_addr24;
+}
+
+
+# ---------------- BSCLR ----------------------
+
+inst:"bsclr" "#"^jmp_bbbbb,"x:"^ea3,bra_addr24 is inst_23_14=0b0000110110 & ea3 & inst_7_5=0b000 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"y:"^ea3,bra_addr24 is inst_23_14=0b0000110110 & ea3 & inst_7_5=0b010 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110110 & inst_7_5=0b100 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110110 & inst_7_5=0b110 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b000 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b010 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b100 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b110 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,jmp_reg8,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b100 & jmp_reg8 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,jmp_reg24,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b100 & jmp_reg24 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+inst:"bsclr" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b100 & jmp_reg56 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <bsclr_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsclr_end>
+}
+
+# --------------------- BSET ----------------------
+# TODO flags not set
+inst:"bset" "#"^jmp_bbbbb,"x:"^ea1 is (inst_23_14=0b0000101001 & inst_7_5=0b001 & jmp_bbbbb) ... & ea1  {
+  local v:3=(1<<jmp_bbbbb);
+  local m:3=*[xmem]:3 ea1 | v;
+  *[xmem]:3 ea1 = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"y:"^ea1 is (inst_23_14=0b0000101001 & inst_7_5=0b011 & jmp_bbbbb) ... & ea1  {
+  local v:3=(1<<jmp_bbbbb);
+  local m:3=*[ymem]:3 ea1 | v;
+  *[ymem]:3 ea1 = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa is inst_23_14=0b0000101000 & inst_7_5=0b001 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr | v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa is inst_23_14=0b0000101000 & inst_7_5=0b011 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr | v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000101010 & inst_7_5=0b001 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr | v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000101010 & inst_7_5=0b011 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr | v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000000100 & inst_7_5=0b001 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr | v;
+  *[xmem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000000100 & inst_7_5=0b011 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr | v;
+  *[ymem]:3 addr = m;
+}
+
+inst:"bset" "#"^jmp_bbbbb,jmp_reg8 is inst_23_14=0b0000101011 & inst_7_5=0b011 & jmp_reg8 & jmp_bbbbb {
+  local v:3=(1<<jmp_bbbbb);
+  jmp_reg8 = jmp_reg8 | v[0,8];
+}
+
+inst:"bset" "#"^jmp_bbbbb,jmp_reg24 is inst_23_14=0b0000101011 & inst_7_5=0b011 & jmp_reg24 & jmp_bbbbb {
+  local v:3=(1<<jmp_bbbbb);
+  jmp_reg24 = jmp_reg24 | v;
+}
+
+inst:"bset" "#"^jmp_bbbbb,jmp_reg56 is inst_23_14=0b0000101011 & inst_7_5=0b011 & jmp_reg56 & jmp_bbbbb {
+  local v:3=(1<<jmp_bbbbb);
+  jmp_reg56[24,24] = jmp_reg56[24,24] | v;
+}
+
+
+# -------------- BSSET ------------------
+inst:"bsset" "#"^jmp_bbbbb,"x:"^ea3,bra_addr24 is inst_23_14=0b0000110110 & ea3 & inst_7_5=0b001 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"y:"^ea3,bra_addr24 is inst_23_14=0b0000110110 & ea3 & inst_7_5=0b011 & jmp_bbbbb; bra_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110110 & inst_7_5=0b101 & jmp_bbbbb & jmp_aaaaaa; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,bra_addr24 is inst_23_14=0b0000110110 & inst_7_5=0b111 & jmp_bbbbb & jmp_aaaaaa; bra_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b001 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b011 & jmp_bbbbb & jmp_pppppp; bra_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"x:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b101 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,"y:<<"^io_addr,bra_addr24 is inst_23_14=0b0000010010 & inst_7_5=0b111 & jmp_bbbbb & jmp_qqqqqq; bra_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,jmp_reg8,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b101 & jmp_reg8 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,jmp_reg24,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b101 & jmp_reg24 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+inst:"bsset" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110111 & inst_7_5=0b101 & jmp_reg56 & jmp_bbbbb; bra_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <bsset_end>;
+  stack_push(inst_next, sr);
+  call bra_addr24;
+  <bsset_end>
+}
+
+# --------------------- BTST ----------------------
+
+inst:"btst" "#"^jmp_bbbbb,"x:"^ea1 is (inst_23_14=0b0000101101 & inst_7_5=0b001 & jmp_bbbbb) ... & ea1  {
+  local v:3=(1<<jmp_bbbbb);
+  $(cf)=(*[xmem]:3 ea1 & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"y:"^ea1 is (inst_23_14=0b0000101101 & inst_7_5=0b011 & jmp_bbbbb) ... & ea1  {
+  local v:3=(1<<jmp_bbbbb);
+  $(cf)=(*[ymem]:3 ea1 & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa is inst_23_14=0b0000101100 & inst_7_5=0b001 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  $(cf)=(*[xmem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa is inst_23_14=0b0000101100 & inst_7_5=0b011 & jmp_bbbbb & jmp_aaaaaa  {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=jmp_aaaaaa;
+  $(cf)=(*[ymem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000101110 & inst_7_5=0b001 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  $(cf)=(*[xmem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000101110 & inst_7_5=0b011 & jmp_bbbbb & jmp_pppppp [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  $(cf)=(*[ymem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"x:<<"^io_addr is inst_23_14=0b0000000101 & inst_7_5=0b001 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  $(cf)=(*[xmem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,"y:<<"^io_addr is inst_23_14=0b0000000101 & inst_7_5=0b011 & jmp_bbbbb & jmp_qqqqqq [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=(1<<jmp_bbbbb);
+  local addr:3=io_addr;
+  $(cf)=(*[ymem]:3 addr & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,jmp_reg8 is inst_23_14=0b0000101111 & inst_7_5=0b011 & jmp_reg8 & jmp_bbbbb {
+  local v:1=(1<<jmp_bbbbb);
+  $(cf) = (jmp_reg8 & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,jmp_reg24 is inst_23_14=0b0000101111 & inst_7_5=0b011 & jmp_reg24 & jmp_bbbbb {
+  local v:3=(1<<jmp_bbbbb);
+  $(cf) = (jmp_reg24 & v) != 0;
+}
+
+inst:"btst" "#"^jmp_bbbbb,jmp_reg56 is inst_23_14=0b0000101111 & inst_7_5=0b011 & jmp_reg56 & jmp_bbbbb {
+  local v:7=(1<<jmp_bbbbb);
+  $(cf) = (jmp_reg56 & v) != 0;
+}
+
+
+parinst:"clr" d is inst_7_4=0b0001 & kkk=0b011 & d {
+  d = 0;
+  calc_flags(0b11111110, 0, 0, 1, 0, 1, 0, 0, 0);
+}
+
+inst:"clb" clb_S,D is inst_23_2=0b0000110000011110000000 & clb_S & D {
+  local src:7=clb_S;
+  local n:3=9;
+
+  if(src!=0) goto <clb_start>;
+  n=0;
+  goto <clb_end>;
+
+  <clb_start>
+  if (src[39,1]==1) goto <clb_loop>;
+  src=~src;
+# count leading 1s
+  <clb_loop>
+  if (src[55,1]==0) goto <clb_end>;
+  n=n-1;
+  src=src<<1;
+  goto <clb_loop>;
+  <clb_end>
+  D[24,24]=n;
+}
+
+# ---------------------- CMP --------------------------
+# Note, cmp JJJ is encoding 2 on Table 12-16, page 12-20
+parinst:"cmp" JJJ_word, d is inst_7=0 & JJJ_word & JJJ>=4 & kkk=0b101 & d {
+  local s1:7=sext(JJJ_word);
+  s1 = s1 << 24;
+  local s2:7=d;
+
+  local t1:8=sext(s1);
+  local t2:8=sext(s2);
+
+  local v:8 = t2 - t1;
+  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+}
+
+parinst:"cmp" s, d is inst_7=0 & s & JJJ=0 & kkk=0b101 & d {
+  local s1:7=s;
+  local s2:7=d;
+  local t1:8=sext(s1);
+  local t2:8=sext(s2);
+
+  local v:8 = t2 - t1;
+  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+}
+
+inst:"cmp" "#"^cmp_iiiiii,d is (inst_23_14=0b0000000101 & cmp_iiiiii & inst_7_4=0b1000 & kkk=0b101 & d) {
+  local s1:7=cmp_iiiiii;
+  s1 = s1 << 24;
+  local s2:7=d;
+
+  local t1:8=sext(s1);
+  local t2:8=sext(s2);
+
+  local v:8 = t2 - t1;
+  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+}
+
+inst:"cmp" "#"^opt_extension,d is (inst_23_14=0b0000000101 & inst_13_8=0 & inst_7_4=0b1100 & kkk=0b101 & d); opt_extension {
+  local tmp:3=opt_extension;
+  local s1:7=sext(tmp);
+  s1 = s1 << 24;
+  local s2:7=d;
+
+  local t1:8=sext(s1);
+  local t2:8=sext(s2);
+
+  local v:8 = t2 - t1;
+  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+}
+
+inst:"div" JJ, d is inst_23_6=0b000000011000000001 & kkk=0 & JJ & d {
+# TODO flag calc is wrong -- refer to doc.
+  local op:7 = sext($(cf));
+  if (d[39,1] ^ JJ[15,1] == 1) goto <div_1>;
+  goto <div_2>;
+  <div_1>
+  op = op + sext(JJ);
+  calc_flags(0b01111111, carry(d*2, op), scarry(d*2, op), d*2 + op == 0, d*2 + op s< 0, 0, 0, 0, 0);
+  goto <div_end>;
+  <div_2>
+  op = op - sext(JJ);
+  calc_flags(0b01111111, carry(d*2, op), d*2 s< op, d*2 + op == 0, d*2 - op s< 0, 0, 0, 0, 0);
+  <div_end>
+  d = d * 2 + op;
+}
+
+inst:"dmacss" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010010 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=sext(QQQQ_op1);
+  local op2:7=sext(QQQQ_op2);
+# documentation wrong. should shift 24 bits not 16.
+  d = d >> 24; 
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  prod=-prod;
+  <mpy_end>
+  d=d+prod;
+}
+
+inst:"dmacsu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010110 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=sext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  d = d >> 24; 
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  prod=-prod;
+  <mpy_end>
+  d=d+prod;
+}
+
+inst:"dmacuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010111 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=zext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  d = d >> 24; 
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  prod=-prod;
+  <mpy_end>
+  d=d+prod;
+}
+
+# ------------------------ DO LEVEL 1 -----------------------------
+
+inst:"do" "x:"^ea3, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^ea3, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=0 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg8, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg24, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg56, jmp_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do forever" jmp_addr24 is loopActive=0 & inst_23_0=0b000000000000001000000011 ; jmp_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+# TODO fv flag in context
+}
+
+inst:"dor" "x:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=0 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg8, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg24, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg56, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+# ------------------------ DO LEVEL 2 -----------------------------
+
+inst:"do" "x:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg8, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg24, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg56, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do forever" jmp_addr24 is loopActive=1 & inst_23_0=0b000000000000001000000011 ; jmp_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+# TODO fv flag in context
+}
+
+inst:"dor" "x:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg8, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg24, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg56, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+# ------------------------ DO LEVEL 3 -----------------------------
+
+inst:"do" "x:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg8, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg24, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do" jmp_reg56, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"do forever" jmp_addr24 is loopActive=2 & inst_23_0=0b000000000000001000000011 ; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+# TODO fv flag in context
+}
+
+inst:"dor" "x:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = *[xmem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = *[ymem]:3 ea3;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  local addr:3 = jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg8, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = zext(jmp_reg8);
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg24, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg24;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+inst:"dor" jmp_reg56, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = jmp_reg56[24,24];
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
+# -------------------- ENDDO ---------------------
+
+inst:"enddo" is inst_23_0=0b000000000000000010001100
+{
+  local tmp:3;
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+parinst:"eor" JJ,d is inst_7_6=0b01 & kkk=0b011 & d & JJ {
+  d[24,24]=d[24,24] ^ JJ;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"eor" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b011 & arith_iiiiii & d {
+  d[24,24]=d[24,24] ^ arith_iiiiii;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"eor" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b011 & d; opt_extension {
+  d[24,24]=d[24,24] ^ opt_extension;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+
+insert_src: SSS is SSS & inst_3_1>=2 { export SSS; }
+insert_src: "#"opt_extension is inst_3_1=0; opt_extension { export opt_extension; }
+
+inst:"inc" D is inst_23_1=0b00000000000000000000100 & D {
+# TODO flags
+  D = D + 1;
+}
+
+inst:"insert" insert_src, qqq, D is (inst_23_7=0b00001100000110110 & qqq & D) ... & insert_src {
+  local offset:3=zext(insert_src[0,6]);
+  local width:3 =zext(insert_src[12,6]);
+  local mask:7=(1<<width)-1;
+  local qval:7= zext(qqq) & mask;
+  local dval:7=(((D>>offset)& (~mask)) | qval) <<offset;
+  local dval2:7=D & mask;
+  D = dval | dval2;
+  calc_flags(0b00111111, 0, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+
+# ----------------- Jcc --------------------
+
+inst:"j"^cc1_name jmp_addr12 is inst_23_16=0b00001110 & cc1_cccc & cc1_name & jmp_addr12 {
+  local cond:2=cc1_cccc;
+  calc_cond(cond, jmp_addr12);
+}
+
+inst:"j"^cc2_name jmp_ea24 is (inst_23_14=0b0000101011 & inst_7_4=0b1010 & cc2_cccc & cc2_name) ... & jmp_ea24 {
+  local cond:2=cc2_cccc;
+  calc_cond(cond, jmp_ea24);
+}
+
+inst:"j"^cc2_name jmp_ea3 is inst_23_14=0b0000101011 & inst_7_4=0b1010 & cc2_cccc & cc2_name & jmp_ea3 {
+  local cond:2=cc2_cccc;
+  calc_cond(cond, jmp_ea3);
+}
+
+# ----------------- JScc --------------------
+
+inst:"js"^cc1_name jmp_addr12 is inst_23_16=0b00001111 & cc1_cccc & cc1_name & jmp_addr12 {
+  local cond:2=cc1_cccc;
+  calc_cond_call(cond, jmp_addr12);
+}
+
+inst:"js"^cc2_name jmp_ea24 is (inst_23_14=0b0000101111 & inst_7_4=0b1010 & cc2_cccc & cc2_name) ... & jmp_ea24 {
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, jmp_ea24);
+}
+
+inst:"js"^cc2_name jmp_ea3 is inst_23_14=0b0000101111 & inst_7_4=0b1010 & cc2_cccc & cc2_name & jmp_ea3 {
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, jmp_ea3);
+}
+
+# FM page 322 (13-82), JCLR "bbbb": only covers 16 bits. should be bbbbb?
+# Also, since jclr always have absolute address extension, the addressing mode should be EA mode encoding 3.
+# Also, see Table 12-13, page 12-19 on Memory/Peripheral Space
+
+
+# ---------------- JCLR ----------------------
+
+inst:"jclr" "#"^jmp_bbbbb,"x:"^ea3,jmp_addr24 is inst_23_14=0b0000101001 & ea3 & inst_7_5=0b100 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"y:"^ea3,jmp_addr24 is inst_23_14=0b0000101001 & ea3 & inst_7_5=0b110 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101000 & inst_7_5=0b100 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101000 & inst_7_5=0b110 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101010 & inst_7_5=0b100 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101010 & inst_7_5=0b110 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000110 & inst_7_5=0b100 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000110 & inst_7_5=0b110 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,jmp_reg8,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b000 & jmp_reg8 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,jmp_reg24,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b000 & jmp_reg24 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jclr" "#"^jmp_bbbbb,jmp_reg56,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b000 & jmp_reg56 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(cond) goto jmp_addr24;
+}
+
+# ---------------- JSCLR ----------------------
+
+inst:"jsclr" "#"^jmp_bbbbb,"x:"^ea3,jmp_addr24 is inst_23_14=0b0000101101 & ea3 & inst_7_5=0b100 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"y:"^ea3,jmp_addr24 is inst_23_14=0b0000101101 & ea3 & inst_7_5=0b110 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101100 & inst_7_5=0b100 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101100 & inst_7_5=0b110 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101110 & inst_7_5=0b100 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101110 & inst_7_5=0b110 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=jmp_pppppp+0xFFFFC0;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000111 & inst_7_5=0b100 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000111 & inst_7_5=0b110 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=jmp_qqqqqq+0xFFFF80;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,jmp_reg8,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b000 & jmp_reg8 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,jmp_reg24,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b000 & jmp_reg24 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+inst:"jsclr" "#"^jmp_bbbbb,jmp_reg56,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b000 & jmp_reg56 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n==0);
+  if(!cond) goto <jsclr_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsclr_end>
+}
+
+# -------------------- JMP ----------------------
+
+inst:"jmp" jmp_ea24 is (inst_23_14=0b0000101011 & inst_7_0=0b10000000) ... & jmp_ea24 {
+  goto jmp_ea24;
+}
+
+inst:"jmp" jmp_ea3 is inst_23_14=0b0000101011 & inst_7_0=0b10000000 & jmp_ea3 {
+  goto [jmp_ea3];
+}
+
+inst:"jmp" jmp_addr12 is inst_23_12=0b000011000000 & jmp_addr12 {
+  goto jmp_addr12;
+}
+
+# TODO jscc 
+
+# -------------- JSET ------------------
+inst:"jset" "#"^jmp_bbbbb,"x:"^ea3,jmp_addr24 is inst_23_14=0b0000101001 & ea3 & inst_7_5=0b101 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"y:"^ea3,jmp_addr24 is inst_23_14=0b0000101001 & ea3 & inst_7_5=0b111 & jmp_bbbbb; jmp_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101000 & inst_7_5=0b101 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101000 & inst_7_5=0b111 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101010 & inst_7_5=0b101 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101010 & inst_7_5=0b111 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000110 & inst_7_5=0b101 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000110 & inst_7_5=0b111 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,jmp_reg8,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b001 & jmp_reg8 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,jmp_reg24,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b001 & jmp_reg24 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto jmp_addr24;
+}
+
+inst:"jset" "#"^jmp_bbbbb,jmp_reg56,jmp_addr24 is inst_23_14=0b0000101011 & inst_7_5=0b001 & jmp_reg56 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(cond) goto jmp_addr24;
+}
+
+# -------------- JSSET ------------------
+inst:"jsset" "#"^jmp_bbbbb,"x:"^ea3,jmp_addr24 is inst_23_14=0b0000101101 & ea3 & inst_7_5=0b101 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[xmem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"y:"^ea3,jmp_addr24 is inst_23_14=0b0000101101 & ea3 & inst_7_5=0b111 & jmp_bbbbb; jmp_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=*[ymem]:3 ea3 & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"x:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101100 & inst_7_5=0b101 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"y:"^jmp_aaaaaa,jmp_addr24 is inst_23_14=0b0000101100 & inst_7_5=0b111 & jmp_bbbbb & jmp_aaaaaa; jmp_addr24  {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=jmp_aaaaaa;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101110 & inst_7_5=0b101 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000101110 & inst_7_5=0b111 & jmp_bbbbb & jmp_pppppp; jmp_addr24 [io_addr=0xFFFFC0+jmp_pppppp;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"x:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000111 & inst_7_5=0b101 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[xmem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,"y:<<"^io_addr,jmp_addr24 is inst_23_14=0b0000000111 & inst_7_5=0b111 & jmp_bbbbb & jmp_qqqqqq; jmp_addr24 [io_addr=0xFFFF80+jmp_qqqqqq;] {
+  local v:3=1<<jmp_bbbbb;
+  local addr:3=io_addr;
+  local m:3=*[ymem]:3 addr & v;
+  local cond:1=(m!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,jmp_reg8,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b001 & jmp_reg8 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=zext(jmp_reg8);
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,jmp_reg24,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b001 & jmp_reg24 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg24;
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+inst:"jsset" "#"^jmp_bbbbb,jmp_reg56,jmp_addr24 is inst_23_14=0b0000101111 & inst_7_5=0b001 & jmp_reg56 & jmp_bbbbb; jmp_addr24 {
+  local v:3=1<<jmp_bbbbb;
+  local m:3=jmp_reg56[24,24];
+  local n:3=(m & v);
+  local cond:1=(n!=0);
+  if(!cond) goto <jsset_end>;
+  stack_push(inst_next, sr);
+  call jmp_addr24;
+  <jsset_end>
+}
+
+# ---------------------- JSR ---------------------
+
+inst:"jsr" jmp_ea24 is (inst_23_14=0b0000101111 & inst_7_0=0b10000000) ... & jmp_ea24 {
+  stack_push(inst_next, sr);
+  call jmp_ea24;
+}
+
+inst:"jsr" jmp_ea3 is inst_23_14=0b0000101111 & inst_7_0=0b10000000 & jmp_ea3 {
+  stack_push(inst_next, sr);
+  call [jmp_ea3];
+}
+
+inst:"jsr" jmp_addr12 is inst_23_12=0b000011010000 & jmp_addr12 {
+  stack_push(inst_next, sr);
+  call jmp_addr12;
+}
+
+# -------------------- Logical Shift ------------------------
+
+parinst:"lsl" d is inst_7_4=0b0011 & d & kkk=0b011 {
+  local cbit:1=d[47,1];
+  local tmp:3=d[24,24]<<1;
+  d[24,24]=tmp;
+  calc_flags(0b11001111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+inst:"lsl" "#"^shift_iiiii, D is inst_23_6=0b000011000001111010 & ashift_S2 & shift_iiiii & D {
+  local tmp1:3=D[24,24]<<(shift_iiiii-1);
+  local cbit:1 = tmp1[23,1];
+  D[24,24] = tmp1<<1;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+inst:"lsl" SSS, D is inst_23_4=0b00001100000111100001 & SSS & D {
+  local tmp1:3=D[24,24] << (SSS-1);
+  local cbit:1 = tmp1[23,1];
+  D[24,24] = tmp1<<1;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+parinst:"lsr" d is inst_7_4=0b0010 & d & kkk=0b011 {
+  local cbit:1=d[0,1];
+  local tmp:3=d[24,24]>>1;
+  d[24,24]=tmp;
+  calc_flags(0b11001111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+inst:"lsr" "#"^shift_iiiii, D is inst_23_6=0b000011000001111011 & ashift_S2 & shift_iiiii & D {
+  local tmp1:3=D[24,24] >> (shift_iiiii-1);
+  local cbit:1 = tmp1[0,1];
+  D[24,24] = tmp1>>1;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+inst:"lsr" SSS, D is inst_23_4=0b00001100000111100011 & SSS & D {
+  local tmp1:3=D[24,24] >> (SSS-1);
+  local cbit:1 = tmp1[0,1];
+  D[24,24] = tmp1>>1;
+  calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
+}
+
+
+
+# ---------------------- LUA ---------------------
+lua_disp:lua_addr is lua_aaa & lua_aaaa [lua_addr=(lua_aaa<<4)+lua_aaaa;] { local tmp:3=lua_addr; export tmp; }
+inst:"lua" ea4_lua, lua_reg8  is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg8  { lua_reg8=ea4_lua[0,8]; }
+inst:"lua" ea4_lua, lua_reg24 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg24 { lua_reg24=ea4_lua; }
+inst:"lua" ea4_lua, lua_reg56 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg56 { lua_reg56=zext(ea4_lua); }
+inst:"lua" (lua_rrr+lua_disp), lua_dddd is inst_23_14=0b0000010000 & lua_rrr & lua_disp & lua_dddd { lua_dddd = lua_rrr + lua_disp; }
+
+parinst:"mac" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b10 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+  local op1:7=sext(QQQ_op1);
+  local op2:7=sext(QQQ_op2);
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mac_end>;
+  prod = -prod;
+  <mac_end>
+  prod = prod << 1;
+  d = d + prod;
+}
+
+inst:"maci" mpy_sgn^"#"^opt_extension*QQ, d is inst_23_6=0b000000010100000111 & inst_1_0=0b10 & mpy_sgn & d & QQ; opt_extension {
+  local op1:7=sext(QQ);
+  local op2_:6=opt_extension;
+  local op2:7=sext(op2_);
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <maci_end>;
+  prod = -prod;
+  <maci_end>
+  prod = prod << 1;
+  d = d + prod;
+}
+
+parinst:"macr" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b11 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+  local op1:7=sext(QQQ_op1);
+  local op2:7=sext(QQQ_op2);
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mac_end>;
+  prod = -prod;
+  <mac_end>
+  prod = prod << 1;
+  d = d + prod;
+  proc_round(d);
+}
+
+
+inst:"macsu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001101 & inst_6=0 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=sext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  local prod:7 = op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  prod = -prod;
+  <mpy_end>
+  prod = prod << 1;
+  d = d + prod;
+}
+
+inst:"macuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001101 & inst_6=1 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=zext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  local prod:7 = op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  prod = -prod;
+  <mpy_end>
+  prod = prod << 1;
+  d = d + prod;
+}
+
+
+parinst:"max a,b" is inst_7_0=0b00011101 {
+  $(cf) = (b s<= a);
+  if (b s> a) goto <max_end>;
+  b = a;
+  <max_end>
+}
+
+parinst:"maxm a,b" is inst_7_0=0b00010101 {
+  $(cf) = (abs(b) <= abs(a));
+  if (abs(b) > abs(a)) goto <maxm_end>;
+  b = a;
+  <maxm_end>
+}
+
+inst:"merge" SSS,D is inst_23_4=0b00001100000110111000 & SSS & D {
+  D[24,12]=SSS[0,12];
+  calc_flags(0b00001110, 0, 0, D[24,12]==0, D[24,1]==1, 0, 0, 0, 0);
+}
+
+parinst:"mpy" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+  local op1:7=sext(QQQ_op1);
+  local op2:7=sext(QQQ_op2);
+  d = op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  d = -d;
+  d = d << 1;
+  <mpy_end>
+}
+
+inst:"mpyi" mpy_sgn^"#"^opt_extension*QQ, d is inst_23_6=0b000000010100000111 & inst_1_0=0b00 & mpy_sgn & d & QQ; opt_extension {
+  local op1:7=sext(QQ);
+  local op2_:6=opt_extension;
+  local op2:7=sext(op2_);
+  local prod:7=op1*op2;
+  if (mpy_sgn==0) goto <mpyi_end>;
+  prod = -prod;
+  <mpyi_end>
+  d = prod << 1;
+}
+
+
+parinst:"mpyr" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b01 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+  local op1:7=sext(QQQ_op1);
+  local op2:7=sext(QQQ_op2);
+  d = op1*op2;
+  if (mpy_sgn==0) goto <mpyr_end>;
+  d = -d;
+  <mpyr_end>
+  d = d << 1;
+  proc_round(d);
+}
+
+inst:"mpysu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001111 & inst_6=0 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=sext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  d = op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  d = -d;
+  <mpy_end>
+  d = d << 1;
+}
+
+inst:"mpyuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001111 & inst_6=1 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=zext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  d = op1*op2;
+  if (mpy_sgn==0) goto <mpy_end>;
+  d = -d;
+  <mpy_end>
+  d = d << 1;
+}
+
+parinst:"neg" d is inst_7_4=0b0011 & kkk=0b110 & d {
+  d = -d;
+  calc_flags(0b11111110, 0, 0, d==0, d s< 0, 0, 0, 0, 0);
+}
+
+inst:"normf" SSS, D is inst_23_4=0b00001100000111100010 & SSS & D {
+# TODO flags
+  local sss_:3=SSS;
+  if (sss_ s>= 0) goto <normf_asr>;
+  sss_ = -sss_;
+  D = D << sss_;
+  goto <normf_end>;
+  <normf_asr>
+  D = D >> sss_;
+  <normf_end>
+}
+
+parinst:"or" JJ,d is inst_7_6=0b01 & kkk=0b010 & d & JJ {
+  d[24,24]=d[24,24] | JJ;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"or" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b010 & arith_iiiiii & d {
+  d[24,24]=d[24,24] | arith_iiiiii;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"or" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b010 & d; opt_extension {
+  d[24,24]=d[24,24] | opt_extension;
+  calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"ori" "#"^iiiiiiii, EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b111110 & EE { EE = EE | iiiiiiii; }
+
+inst:"pflush" is inst_23_0=0b000000000000000000000011 { proc_pflush(); }
+
+inst:"rep x:"^ea3 is inst_23_14=0b0000011001 & inst_7_0=0b00100000 & ea3 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = *[xmem]:3 ea3;
+}
+
+inst:"rep y:"^ea3 is inst_23_14=0b0000011001 & inst_7_0=0b01100000 & ea3 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = *[ymem]:3 ea3;
+}
+
+inst:"rep x:"^jmp_aaaaaa is inst_23_14=0b0000011000 & inst_7_0=0b00100000 & jmp_aaaaaa [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  local addr:3=jmp_aaaaaa;
+  lc = *[xmem]:3 addr;
+}
+
+inst:"rep y:"^jmp_aaaaaa is inst_23_14=0b0000011000 & inst_7_0=0b01100000 & jmp_aaaaaa [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  local addr:3=jmp_aaaaaa;
+  lc = *[ymem]:3 addr;
+}
+
+inst:"rep #"^do_imm12 is inst_23_16=0b00000110 & inst_7_4=0b1010 & do_imm12 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = do_imm12;
+}
+
+inst:"rep" jmp_reg8 is inst_23_14=0b0000011011 & inst_7_0=0b00100000 & jmp_reg8 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = zext(jmp_reg8);
+}
+
+inst:"rep" jmp_reg24 is inst_23_14=0b0000011011 & inst_7_0=0b00100000 & jmp_reg24 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = jmp_reg24;
+}
+
+inst:"rep" jmp_reg56 is inst_23_14=0b0000011011 & inst_7_0=0b00100000 & jmp_reg56 [repActive=1; globalset(inst_next, repActive);] {
+  temp_reg = lc;
+  lc = jmp_reg56[24,24];
+}
+
+inst:"rti" is inst_23_0=0b000000000000000000000100 { 
+  stack_pop(pc, sr);
+  return [pc];
+}
+
+inst:"rts" is inst_23_0=0b000000000000000000001100 { 
+  local tmp:3;
+  stack_pop(pc, tmp);
+  return [pc];
+}
+
+# ---------------- SUB ---------------------
+
+parinst:"sbc" J, d is inst_7_5=0b001 & kkk=0b101 & J & d {
+  local tmp1:7=zext(J);
+  local tmp2:7=zext($(cf));
+  local sum:7=tmp1+tmp2;
+  calc_flags(0b11111111, sborrow(d, sum), sborrow(d, sum), d==sum, (d-sum) s< 0, 0, 0, 0, 0);
+  d = d - sum;
+}
+
+parinst:"sub" JJJ_word, d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0b100 {
+  local op:7=sext(JJJ_word);
+  op = op << 24;
+  calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
+  d = d - op;
+}
+
+parinst:"sub" JJJ_long, d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0b100 {
+  local op:7=sext(JJJ_long);
+  calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
+  d = d - op;
+}
+
+parinst:"sub" s,d is s & d & inst_7=0 & JJJ=1 & kkk=0b100 {
+  local op:7=s;
+  calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
+  d = d - op;
+}
+
+inst:"sub" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0b100 & arith_iiiiii & d {
+  local op:7=arith_iiiiii;
+  op = op << 24;
+  calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
+  d = d - op;
+}
+
+inst:"sub" "#"^opt_extension, d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b100 & d ; opt_extension {
+  local tmp:3=opt_extension;
+  local op:7=sext(tmp);
+  op = op << 24;
+  calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
+  d = d - op;
+}
+
+parinst:"subl" s, d is inst_7=0 & JJJ=0b001 & kkk=0b110 & s & d {
+  local op:7=d*2;
+  calc_flags(0b11111111, sborrow(op, s), carry(d, d) | sborrow(op, s), op==s, (op-s) s< 0, 0, 0, 0, 0);
+  d = op - s;
+}
+
+parinst:"subr" s, d is inst_7_4=0b0000 & kkk=0b110 & s & d {
+  local op:7=d/2;
+  calc_flags(0b11111111, sborrow(op, s), sborrow(op, s), op==s, (op-s) s< 0, 0, 0, 0, 0);
+  d = op - s;
+}
+
+# cannot send local label into a macro...
+
+tcc_form1: is inst_23_16=0b00000010 & inst_11_7=0 & kkk=0 {} 
+tcc_form2: is inst_23_16=0b00000011 & inst_11=0 & inst_7=0 {}
+tcc_form3: is inst_23_16=0b00000010 & inst_11=1 & inst_7_3=0 {}
+
+tcc_en1: is tcc_form1 {}
+tcc_en1: is tcc_form2 {}
+
+tcc_en2: is tcc_form2 {}
+tcc_en2: is tcc_form3 {}
+
+tcc_s1: JJJ_word is tcc_en1 & JJJ>=4 & JJJ_word { local tmp:7=zext(JJJ_word); export tmp; }
+tcc_s1: s is tcc_en1 & JJJ=0 & s { local tmp:7=s; export tmp; }
+tcc_d1: d is tcc_en1 & d { export d; }
+# fallback tcc1
+tcc_s1: is tcc_form3 { local tmp:7=0; export tmp; }
+tcc_d1: is tcc_form3 { local tmp:7=0; export tmp; }
+
+tcc_s2: ttt is tcc_en2 & ttt { export ttt; }
+tcc_d2: TTT is tcc_en2 & TTT { export TTT; }
+# fallback tcc2
+tcc_s2: is tcc_form1 { local tmp:3=0; export tmp; }
+tcc_d2: is tcc_form1 { local tmp:3=0; export tmp; }
+
+# joint form
+tcc_sd1: tcc_s1, tcc_d1 is tcc_en1 & tcc_s1 & tcc_d1 {}
+tcc_sd1: is tcc_form3 {}
+tcc_sd2: tcc_s2, tcc_d2 is tcc_en2 & tcc_s2 & tcc_d2 {}
+tcc_sd2: is tcc_form1 {}
+
+inst:"t"^cc1_name tcc_sd1 tcc_sd2 is tcc_sd1 & tcc_sd2 & tcc_s1 & tcc_d1 & tcc_s2 & tcc_d2 & cc1_name & cc1_cccc {
+  local cond:1=cc1_cccc;
+  if
+  ( ($(cf)==0 & cond==0b0000)
+  | ($(cf)==1 & cond==0b1000)
+  | ($(ef)==0 & cond==0b0101)
+  | ($(zf)==1 & cond==0b1010)
+  | ($(ef)==1 & cond==0b1101)
+  | (($(nf)^$(vf))==0 & cond==0b0001)
+  | (($(zf)+($(nf)^$(vf)))==0 & cond==0b0111)
+  | ($(lf)==0 & cond==0b0110)
+  | (($(zf)+($(nf)^$(vf)))==1 & cond==0b1111)
+  | ($(lf)==1 & cond==0b1110)
+  | (($(nf)^$(vf))==1 & cond==0b1001)
+  | ($(nf)==1 & cond==0b1011)
+  | ($(zf)==0 & cond==0b0010)
+  | ($(zf)+(!$(uf) & !$(ef))==1 & cond==0b1100)
+  | ($(nf)==0 & cond==0b0011)
+  | ($(zf)+(!$(uf) & !$(ef))==0 & cond==0b0100)
+  ) goto <tcc_transfer>;
+  goto <tcc_end>;
+  <tcc_transfer>
+  tcc_d1 = tcc_s1;
+  tcc_d2 = tcc_s2;
+  <tcc_end>
+}
+
+parinst:"tfr" JJJ_word, d is inst_7=0 & JJJ_word & JJJ >=4 & d & kkk=0b001 {
+  d = zext(JJJ_word);
+}
+
+parinst:"tfr" s, d is inst_7=0 & JJJ=0 & s & d & kkk=0b001 {
+  d = s;
+}
+
+parinst:"tst" d is inst_7_4=0b0000 & kkk=0b011 & d { calc_flags(0b11111110, 0, 0, d==0, d s< 0, 0, 0, 0, 0); }
+
+# Put these instructions at the bottom, as they may accidently create positive matches for other instructions
+# The Ghidra sleigh parser doesn't traverse through all the possibilities.
+
+inst:"move" parMove is opcode=0b00000000 ... & parMove {build parMove;}
+inst:"nop" is inst_23_8=0b0000000000000000 & opcode=0b00000000 {}
+
+# Begin Master Instruction Rules Block
+
+# Master Instruction Rule: parallel move/condition
+inst:parinst parMove parCond is parinst ... & parMove & parCond ... { 
+  build parCond;
+  build parMove;
+  build parinst;
+}
+
+# Master Instruction Rule: hardware loop control
+loopedinst:inst is inst & loopActive=1 & loopCaptureStart=0 & loopEnd1=loopCur & loopStart1 [loopActive=0; globalset(inst_next, loopActive);] { 
+  build inst;
+  lc = lc - 1;
+  local tmp:3=loopStart1;
+  if (lc == 0) goto <end_of_loop>; 
+  goto [tmp];
+  <end_of_loop>
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+loopedinst:inst is inst & loopActive=2 & loopCaptureStart=0 & loopEnd2=loopCur & loopStart2 [loopActive=1; globalset(inst_next, loopActive);] { 
+  build inst;
+  lc = lc - 1;
+  local tmp:3=loopStart2;
+  if (lc == 0) goto <end_of_loop>; 
+  goto [tmp];
+  <end_of_loop>
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+loopedinst:inst is inst & loopActive=3 & loopCaptureStart=0 & loopEnd3=loopCur & loopStart3 [loopActive=2; globalset(inst_next, loopActive);] { 
+  build inst;
+  lc = lc - 1;
+  local tmp:3=loopStart3;
+  if (lc == 0) goto <end_of_loop>; 
+  goto [tmp];
+  <end_of_loop>
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+# Master Instruction Rule: hardware loop start deferred capture + loop on itself
+loopedinst:inst is inst & loopActive=1 & loopCaptureStart=1 & loopEnd1=loopCur [loopActive=0; loopCaptureStart=0; globalset(inst_next, loopActive); globalset(inst_next, loopCaptureStart); ] {
+  <start_of_loop>
+  build inst;
+  lc = lc - 1;
+  if (lc != 0) goto <start_of_loop>; 
+  local tmp:3;
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+loopedinst:inst is inst & loopActive=2 & loopCaptureStart=1 & loopEnd2=loopCur [loopActive=1; loopCaptureStart=0; globalset(inst_next, loopActive); globalset(inst_next, loopCaptureStart); ] {
+  <start_of_loop>
+  build inst;
+  lc = lc - 1;
+  if (lc != 0) goto <start_of_loop>; 
+  local tmp:3;
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+loopedinst:inst is inst & loopActive=3 & loopCaptureStart=1 & loopEnd3=loopCur [loopActive=2; loopCaptureStart=0; globalset(inst_next, loopActive); globalset(inst_next, loopCaptureStart); ] {
+  <start_of_loop>
+  build inst;
+  lc = lc - 1;
+  if (lc != 0) goto <start_of_loop>; 
+  local tmp:3;
+  stack_pop(tmp, sr);
+  stack_pop(la, lc);
+}
+
+# Master Instruction Rule: hardware loop start deferred capture
+loopedinst:inst is inst & loopCaptureStart=1 & loopActive=1 [loopCaptureStart=0; loopStart1=inst_start; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopStart1);] {}
+loopedinst:inst is inst & loopCaptureStart=1 & loopActive=2 [loopCaptureStart=0; loopStart2=inst_start; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopStart2);] {}
+loopedinst:inst is inst & loopCaptureStart=1 & loopActive=3 [loopCaptureStart=0; loopStart3=inst_start; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopStart3);] {}
+
+# Master Instruction Rule: hardware repeat logic
+loopedinst:inst is inst & repActive=1 [repActive=0; globalset(inst_next, repActive);] {
+  <repstart>
+  build inst;
+  lc=lc-1;
+  if (lc != 0) goto <repstart>;
+  lc=temp_reg;
+}
+
+loopedinst:inst is inst {}
+
+:^loopedinst is loopedinst [loopCur=inst_start;] {}
+
+
