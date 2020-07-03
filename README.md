@@ -1,3 +1,8 @@
+# The easy way
+
+- Download the prebuilt module package
+- Tick the box in the Ghidra module manager, restart.
+
 # Setting up the dev environment
 
 - Now organized as a ghidra extension.
