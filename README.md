@@ -29,6 +29,7 @@ Note, this conflicts with module installation.
 - You'll see a lot of shifting, due to the layout of the register file and the instruction semantics.
 - Nested DO loop is supported, up to 3 layers. But it doesn't work everytime. "Repair flow" seems to help Ghidra to sort out the contextual state and correct the state flow.
 - Not 100% instruction coverage. See https://github.com/yatli/ghidra_dsp56k/issues/1 .
+- Address Modifiers are currently ignored, meaning only linear addressing is supported at the moment.
 
 ## Bonus docs
 
