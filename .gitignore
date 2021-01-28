@@ -1,4 +1,4 @@
-bin
+/.gradle/
+.settings
 build
 dist
-.*

@@ -102,7 +102,7 @@ define token inst_opt(24)
 # opt_extension     = (0,  15)
   opt_extension     = (0,  23)
   rn_xxxx           = (0,  23)
-  cc1_xxxx         =  (0,  24) signed
+  cc1_xxxx         =  (0,  23) signed
 ;
 
 
@@ -329,8 +329,10 @@ define token inst_word(24)
   inst_1_0                  = (0,   1)
 
   ttt                       = (8,  10)
+  d_xx                      = (5,   5) # d_xx is for DMACxx, MPYxx and MACxx
   qqq                       = (4,   6)
   QQ                        = (4,   5)
+  qq                        = (4,   5)
   QQQ_op1                   = (4,   6)
   QQQ_op2                   = (4,   6)
   QQQQ_op1                  = (0,   3)
@@ -340,11 +342,13 @@ define token inst_word(24)
   JJJ_long                  = (4,   6)
   JJ                        = (4,   5)
   J                         = (4,   4)
+  k_xx                      = (4,   4) # k_xx and k_xx_ are for DMACxx, MPYxx and MACxx
+  k_xx_                     = (4,   4)
   d                         = (3,   3)
   s                         = (3,   3)
-  k                         = (2,   2)
-  k_                        = (2,   2)
   SSS                       = (1,   3)
+  k                         = (2,   2) # for mpy/mac/maci/macr/macri
+  k_                        = (2,   2)
   kkk                       = (0,   2)
   TTT                       = (0,   2)
   EE                        = (0,   1)
@@ -358,7 +362,7 @@ define token inst_word(24)
 #  destination accumulator (selected by
 #  the d bit in the opcode) is A, or A if the
 #  destination accumulator is B.
-attach variables [d]                              [a b];
+attach variables [d d_xx]                         [a b];
 attach variables [s]                              [b a];
 attach variables [J]                              [x y];
 attach variables [JJ]                             [x0 y0 x1 y1];
@@ -552,11 +556,13 @@ attach variables [QQQ_op1]                      [x0 y0 x1 y1 x0 y0 x1 y1];
 attach variables [QQQ_op2]                      [x0 y0 x0 y0 y1 x0 y0 x1];
 # Data ALU Multiply Operands Encoding 2
 attach variables [QQ]                           [y1 x0 y0 x1];
+# Data ALU Multiply Operands Encoding 3
+attach variables [qq]                           [x0 y0 x1 y1];
 # Data ALU Multiply Operands Encoding 4
-attach variables [QQQQ_op1]                     [x0 y0 x1 y1 x1 y1 x0 y0 
-                                                 x0 y0 x1 y1 y1 x0 y0 x1];
-attach variables [QQQQ_op2]                     [x0 y0 x0 y0 x1 y1 x1 y1
-                                                 y1 x0 y0 x1 x0 y0 x1 y1];
+attach variables [QQQQ_op1]                     [x0 y0 x1 y1 x0 y0 x1 y1
+                                                 x1 y1 x0 y0 y1 x0 y0 x1];
+attach variables [QQQQ_op2]                     [x0 y0 x0 y0 y1 x0 y0 x1
+                                                 x1 y1 x1 y1 x0 y0 x1 y1];
 
 attach variables [TTT ttt]                      [r0 r1 r2 r3 r4 r5 r6 r7];
 
@@ -820,7 +826,7 @@ xmov2_reg24:xmov2_dddddd_word is ( (xmov2_dddddd>=4 & xmov2_dddddd<=9)
 xmov2_reg56:xmov2_dddddd_long is (xmov2_dddddd=14|xmov2_dddddd=15) & xmov2_dddddd_long { export xmov2_dddddd_long; }
 
 # XXX sext, ref sleigh 7.7.1.5
-xmov2_rn_xxx:offset          is xmov2_aaaaaa & xmov2_a [offset=((xmov2_aaaaaa<<1)+xmov2_a);] { local offset_3:3 = offset; export offset_3; }
+xmov2_rn_xxx:off              is xmov2_aaaaaa & xmov2_a [off=((xmov2_aaaaaa<<1)+xmov2_a);] { local offset_3:3 = off; export offset_3; }
 
 xmov3_reg8:xmov3_dddd_byte  is (xmov3_dddd >= 10 & xmov3_dddd <=11) & xmov3_dddd_byte { export xmov3_dddd_byte; }
 xmov3_reg24:xmov3_dddd_word is ((xmov3_dddd >= 4 & xmov3_dddd <=9) | (xmov3_dddd >=12 & xmov3_dddd <=13)) & xmov3_dddd_word { export xmov3_dddd_word; }
@@ -886,7 +892,7 @@ ymov2_reg24:ymov2_dddddd_word is ( (ymov2_dddddd>=4 & ymov2_dddddd<=9)
 ymov2_reg56:ymov2_dddddd_long is (ymov2_dddddd=14|ymov2_dddddd=15) & ymov2_dddddd_long { export ymov2_dddddd_long; }
 
 # XXX sext, ref sleigh 7.7.1.5
-ymov2_rn_xxx:offset          is ymov2_aaaaaa & ymov2_a [offset=((ymov2_aaaaaa<<1)+ymov2_a);] { local offset_3:3 = offset; export offset_3; }
+ymov2_rn_xxx:off             is ymov2_aaaaaa & ymov2_a [off=((ymov2_aaaaaa<<1)+ymov2_a);] { local offset_3:3 = off; export offset_3; }
 
 ymov3_reg8:ymov3_dddd_byte  is (ymov3_dddd >= 10 & ymov3_dddd <=11) & ymov3_dddd_byte { export ymov3_dddd_byte; }
 ymov3_reg24:ymov3_dddd_word is ((ymov3_dddd >= 4 & ymov3_dddd <=9) | (ymov3_dddd >=12 & ymov3_dddd <=13)) & ymov3_dddd_word { export ymov3_dddd_word; }
@@ -1090,16 +1096,16 @@ inst:"movep" "x:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b0
 inst:"movep" "y:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000011110 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[ymem]:3 ea1; }
 
 # P: Reference (high I/O address)
-inst:"movep" "p:"^ea1,"x:<<"^movep_pp is (inst_23_14=0b0000100001 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[xmem]:3 movep_pp=*[progmem]:3 ea1; }
-inst:"movep" "p:"^ea1,"y:<<"^movep_pp is (inst_23_14=0b0000100101 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[ymem]:3 movep_pp=*[progmem]:3 ea1; }
-inst:"movep" "x:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100011 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_pp; }
-inst:"movep" "y:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100111 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_pp; }
+inst:"movep" "p:"^ea1,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[xmem]:3 movep_pp=*[progmem]:3 ea1; }
+inst:"movep" "p:"^ea1,"y:<<"^movep_pp is (inst_23_14=0b0000100111 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[ymem]:3 movep_pp=*[progmem]:3 ea1; }
+inst:"movep" "x:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100001 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_pp; }
+inst:"movep" "y:<<"^movep_pp,"p:"^ea1 is (inst_23_14=0b0000100101 & inst_7_6=0b01 & movep_pp) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_pp; }
 
 # P: Reference (low I/O address)
-inst:"movep" "p:"^ea1,"x:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 movep_qq=*[progmem]:3 ea1; }
-inst:"movep" "p:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000000010 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[progmem]:3 ea1; }
-inst:"movep" "x:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000011 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_qq; }
-inst:"movep" "y:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000011 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_qq; }
+inst:"movep" "p:"^ea1,"x:<<"^movep_qq is (inst_23_14=0b0000000011 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[xmem]:3 movep_qq=*[progmem]:3 ea1; }
+inst:"movep" "p:"^ea1,"y:<<"^movep_qq is (inst_23_14=0b0000000011 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[ymem]:3 movep_qq=*[progmem]:3 ea1; }
+inst:"movep" "x:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000010 & inst_7_6=0b00 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[xmem]:3 movep_qq; }
+inst:"movep" "y:<<"^movep_qq,"p:"^ea1 is (inst_23_14=0b0000000010 & inst_7_6=0b01 & movep_qq) ... & ea1 { *[progmem]:3 ea1=*[ymem]:3 movep_qq; }
 
 # X: or Y: Reference (high I/O address) -- imm24
 inst:"movep" ea1_imm24,"x:<<"^movep_pp is (inst_23_14=0b0000100011 & inst_7_6=0b10 & movep_pp) ... & ea1_imm24 { *[xmem]:3 movep_pp=ea1_imm24; }
@@ -1174,8 +1180,11 @@ jmp_ea24:opt_extension is ea1_mmmrrr=0b110000; opt_extension { export *[progmem]
 # the semantic is problematic, though.
 jmp_ea3:ea3 is ea3 { local tmp:3 = ea3; export tmp; }
 
-mpy_sgn: is k=0 & k_ { local tmp:1=k_; export tmp; }
-mpy_sgn:"-" is k=1 & k_ { local tmp:1=k_; export tmp; }
+mulxx_sgn: is k_xx=0 & k_xx_ { local tmp:1=k_xx_; export tmp; }
+mulxx_sgn:"-" is k_xx=1 & k_xx_ { local tmp:1=k_xx_; export tmp; }
+
+mul_sgn: is k=0 & k_ { local tmp:1=k_; export tmp; }
+mul_sgn:"-" is k=1 & k_ { local tmp:1=k_; export tmp; }
 
 lua_reg8:lua_ddddd_byte is (lua_ddddd=10|lua_ddddd=11) & lua_ddddd_byte { export lua_ddddd_byte; }
 lua_reg24:lua_ddddd_word is (lua_ddddd>3 & lua_ddddd!=10 & lua_ddddd!=11 & lua_ddddd!=14 & lua_ddddd!=15) & lua_ddddd_word { export lua_ddddd_word; }
@@ -1259,7 +1268,7 @@ inst:"and" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kk
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"and" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b110 & d; opt_extension {
+inst:"and" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b110 & d; opt_extension {
   d[24,24]=d[24,24] & opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
@@ -2082,38 +2091,38 @@ inst:"div" JJ, d is inst_23_6=0b000000011000000001 & kkk=0 & JJ & d {
   d = d * 2 + op;
 }
 
-inst:"dmacss" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010010 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"dmacss" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010010 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=sext(QQQQ_op2);
 # documentation wrong. should shift 24 bits not 16.
-  d = d >> 24; 
+  d_xx = d_xx >> 24; 
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
-  d=d+prod;
+  d_xx=d_xx+prod;
 }
 
-inst:"dmacsu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010110 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"dmacsu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010110 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  d = d >> 24; 
+  d_xx = d_xx >> 24; 
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
-  d=d+prod;
+  d_xx=d_xx+prod;
 }
 
-inst:"dmacuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_6=0b0000000010010010111 & d & mpy_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"dmacuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010111 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=zext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  d = d >> 24; 
+  d_xx = d_xx >> 24; 
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
-  d=d+prod;
+  d_xx=d_xx+prod;
 }
 
 # ------------------------ DO LEVEL 1 -----------------------------
@@ -2612,14 +2621,14 @@ inst:"eor" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kk
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"eor" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b011 & d; opt_extension {
+inst:"eor" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b011 & d; opt_extension {
   d[24,24]=d[24,24] ^ opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
 
 insert_src: SSS is SSS & inst_3_1>=2 { export SSS; }
-insert_src: "#"opt_extension is inst_3_1=0; opt_extension { export opt_extension; }
+insert_src: "#"^opt_extension is inst_3_1=0; opt_extension { export opt_extension; }
 
 inst:"inc" D is inst_23_1=0b00000000000000000000100 & D {
 # TODO flags
@@ -2627,11 +2636,11 @@ inst:"inc" D is inst_23_1=0b00000000000000000000100 & D {
 }
 
 inst:"insert" insert_src, qqq, D is (inst_23_7=0b00001100000110110 & qqq & D) ... & insert_src {
-  local offset:3=zext(insert_src[0,6]);
+  local off:3=zext(insert_src[0,6]);
   local width:3 =zext(insert_src[12,6]);
   local mask:7=(1<<width)-1;
   local qval:7= zext(qqq) & mask;
-  local dval:7=(((D>>offset)& (~mask)) | qval) <<offset;
+  local dval:7=(((D>>off)& (~mask)) | qval) <<off;
   local dval2:7=D & mask;
   D = dval | dval2;
   calc_flags(0b00111111, 0, 0, D==0, D s< 0, 0, 0, 0, 0);
@@ -3179,34 +3188,36 @@ inst:"lua" ea4_lua, lua_reg24 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0
 inst:"lua" ea4_lua, lua_reg56 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg56 { lua_reg56=zext(ea4_lua); }
 inst:"lua" (lua_rrr+lua_disp), lua_dddd is inst_23_14=0b0000010000 & lua_rrr & lua_disp & lua_dddd { lua_dddd = lua_rrr + lua_disp; }
 
-parinst:"mac" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b10 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mac" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b10 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mac_end>;
+  if (mul_sgn==0) goto <mac_end>;
   prod = -prod;
   <mac_end>
   prod = prod << 1;
   d = d + prod;
 }
 
-inst:"maci" mpy_sgn^"#"^opt_extension*QQ, d is inst_23_6=0b000000010100000111 & inst_1_0=0b10 & mpy_sgn & d & QQ; opt_extension {
-  local op1:7=sext(QQ);
+# TODO MAC format & opcodes 2 with a short immediate operand
+
+inst:"maci" mul_sgn^"#"^opt_extension*qq, d is inst_23_6=0b000000010100000111 & inst_1_0=0b10 & mul_sgn & d & qq; opt_extension {
+  local op1:7=sext(qq);
   local op2_:6=opt_extension;
   local op2:7=sext(op2_);
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <maci_end>;
+  if (mul_sgn==0) goto <maci_end>;
   prod = -prod;
   <maci_end>
   prod = prod << 1;
   d = d + prod;
 }
 
-parinst:"macr" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b11 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"macr" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b11 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mac_end>;
+  if (mul_sgn==0) goto <mac_end>;
   prod = -prod;
   <mac_end>
   prod = prod << 1;
@@ -3215,26 +3226,26 @@ parinst:"macr" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b11 & mpy_sgn 
 }
 
 
-inst:"macsu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001101 & inst_6=0 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+inst:"macsu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001101 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
   local prod:7 = op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mulxx_sgn==0) goto <mpy_end>;
   prod = -prod;
   <mpy_end>
   prod = prod << 1;
-  d = d + prod;
+  d_xx = d_xx + prod;
 }
 
-inst:"macuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001101 & inst_6=1 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+inst:"macuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001101 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=zext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
   local prod:7 = op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mulxx_sgn==0) goto <mpy_end>;
   prod = -prod;
   <mpy_end>
   prod = prod << 1;
-  d = d + prod;
+  d_xx = d_xx + prod;
 }
 
 
@@ -3257,57 +3268,57 @@ inst:"merge" SSS,D is inst_23_4=0b00001100000110111000 & SSS & D {
   calc_flags(0b00001110, 0, 0, D[24,12]==0, D[24,1]==1, 0, 0, 0, 0);
 }
 
-parinst:"mpy" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mpy" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
   d = op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
+  if (mul_sgn==0) goto <mpy_end>;
   d = -d;
   d = d << 1;
   <mpy_end>
 }
 
-inst:"mpyi" mpy_sgn^"#"^opt_extension*QQ, d is inst_23_6=0b000000010100000111 & inst_1_0=0b00 & mpy_sgn & d & QQ; opt_extension {
-  local op1:7=sext(QQ);
+inst:"mpyi" mul_sgn^"#"^opt_extension*qq, d is inst_23_6=0b000000010100000111 & inst_1_0=0b00 & mul_sgn & d & qq; opt_extension {
+  local op1:7=sext(qq);
   local op2_:6=opt_extension;
   local op2:7=sext(op2_);
   local prod:7=op1*op2;
-  if (mpy_sgn==0) goto <mpyi_end>;
+  if (mul_sgn==0) goto <mpyi_end>;
   prod = -prod;
   <mpyi_end>
   d = prod << 1;
 }
 
 
-parinst:"mpyr" mpy_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b01 & mpy_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mpyr" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b01 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
   d = op1*op2;
-  if (mpy_sgn==0) goto <mpyr_end>;
+  if (mul_sgn==0) goto <mpyr_end>;
   d = -d;
   <mpyr_end>
   d = d << 1;
   proc_round(d);
 }
 
-inst:"mpysu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001111 & inst_6=0 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+inst:"mpysu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001111 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  d = op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
-  d = -d;
+  d_xx = op1*op2;
+  if (mulxx_sgn==0) goto <mpy_end>;
+  d_xx = -d_xx;
   <mpy_end>
-  d = d << 1;
+  d_xx = d_xx << 1;
 }
 
-inst:"mpyuu" mpy_sgn^QQQQ_op1*QQQQ_op2, d is inst_23_7=0b00000001001001111 & inst_6=1 & mpy_sgn & d & QQQQ_op1 & QQQQ_op2 {
+inst:"mpyuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001111 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=zext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  d = op1*op2;
-  if (mpy_sgn==0) goto <mpy_end>;
-  d = -d;
+  d_xx = op1*op2;
+  if (mulxx_sgn==0) goto <mpy_end>;
+  d_xx = -d_xx;
   <mpy_end>
-  d = d << 1;
+  d_xx = d_xx << 1;
 }
 
 parinst:"neg" d is inst_7_4=0b0011 & kkk=0b110 & d {
@@ -3337,7 +3348,7 @@ inst:"or" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"or" #opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b010 & d; opt_extension {
+inst:"or" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b010 & d; opt_extension {
   d[24,24]=d[24,24] | opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
