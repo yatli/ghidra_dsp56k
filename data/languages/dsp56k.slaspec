@@ -20,27 +20,29 @@ define space stackmem type=ram_space      size=3 wordsize=6;
 define space register type=register_space size=3 wordsize=1;
 
 # 10x24-bit ALU registers
-define register offset=0x0   size=3     [ x1 x0 y1 y0   _ a1 a0  _ b1 b0];
+# Mind the little-endianess.
+#                                         0  3  6  9    c  f  12 15 18 1b
+define register offset=0x0   size=3     [ x0 x1 y0 y1   a0 a1 _  b0 b1 _  ];
 define register offset=0x0   size=6     [ x     y    ];
-define register offset=0xe   size=1                    [a2     ];
-define register offset=0xe   size=7                    [a      ];
-define register offset=0xf   size=6                       [a10 ];
-define register offset=0x17  size=1                             [b2    ];
-define register offset=0x17  size=7                             [b     ];
-define register offset=0x18  size=6                               [b10 ];
+define register offset=0xc   size=7                   [ a       ];
+define register offset=0xc   size=6                   [ a10     ];
+define register offset=0x12  size=1                   [      a2 ];
+define register offset=0x15  size=7                            [ b        ];
+define register offset=0x15  size=6                            [ b10      ];
+define register offset=0x1b  size=1                                  [ b2 ];
 # 24x24-bit AGU registers
 # Rn  Address Registers
 # Nn  Address Offset Registers
 # Mn  Address Modifier Registers
-define register offset=0x100 size=3     [ r7 r6 r5 r4 r3 r2 r1 r0
+define register offset=0x20  size=3     [ r7 r6 r5 r4 r3 r2 r1 r0
                                           n7 n6 n5 n4 n3 n2 n1 n0
                                           m7 m6 m5 m4 m3 m2 m1 m0 ];
 # Program Control Registers
-define register offset=0x200 size=3     [ omr         sr         ssh ssl sp sc sz pc la lc vba ep];
-define register offset=0x200 size=1     [ com eom scs ccr mr emr ];
+define register offset=0x68 size=3      [ omr         sr         ssh ssl sp sc sz pc la lc vba ep];
+define register offset=0x68 size=1      [ com eom scs ccr mr emr ];
 
 # Special Registers
-define register offset=0x300 size=3     [ fv_reg  temp_reg ];
+define register offset=0x8c size=3     [ fv_reg  temp_reg ];
 
 # CCR flags
 # Bug: bitrange compiles, but generates broken xml
@@ -185,6 +187,7 @@ define token inst_word(24)
   lmov_opname               = (16, 19)
   lmov_op1                  = (16, 19)
   lmov_op2                  = (16, 19)
+  lmov_acc                  = (16, 19)
   lmov_opab1                = (16, 19)
   lmov_opab2                = (16, 19)
 
@@ -204,6 +207,8 @@ define token inst_word(24)
   cc2_mmm                   = (11, 13)
   cc2_nn                    = (8,  10)
   cc2_rn                    = (8,  10)
+  trap_cccc                 = (0,   3)
+  trap_cccc_name            = (0,   3)
 
   jmp_aaaaaaaaaaaa          = (0,  11)
   jmp_aaaaaa                = (8,  13)
@@ -279,6 +284,9 @@ define token inst_word(24)
   ea4_rrr_rn                = (8,  10)
   ea4_rrr_nn                = (8,  10)
   opcode                    = (0,   7)
+  
+  vsl_S                     = (16, 16)
+  vsl_i                     = (4,   4)
 
   inst_23_22                = (22, 23)
   inst_23_21                = (21, 23)
@@ -326,6 +334,8 @@ define token inst_word(24)
   inst_5                    = (5,   5)
   inst_4                    = (4,   4)
   inst_3_1                  = (1,   3)
+  inst_3_0                  = (0,   3)
+  inst_2_0                  = (0,   2)
   inst_1_0                  = (0,   1)
 
   ttt                       = (8,  10)
@@ -347,7 +357,7 @@ define token inst_word(24)
   d                         = (3,   3)
   s                         = (3,   3)
   SSS                       = (1,   3)
-  k                         = (2,   2) # for mpy/mac/maci/macr/macri
+  k                         = (2,   2) # for mpy/mac/maci/macr/macri/mpyri
   k_                        = (2,   2)
   kkk                       = (0,   2)
   TTT                       = (0,   2)
@@ -370,7 +380,8 @@ attach variables [JJJ_word]                       [_ _ _ _ x0 y0 x1 y1];
 attach variables [JJJ_long]                       [_ _ x y _  _  _  _ ];
 attach variables [EE]                             [mr ccr com eom];
 attach variables [ashift_S2  ashift_S2_2 
-                  clb_S      D] 
+                  clb_S      D
+                  vsl_S] 
                                                   [a b];
 attach variables [SSS]                            [_  _  a1 b1 x0 y0 x1 y1 ];
 attach variables [qqq]                            [_  _  a0 b0 x0 y0 x1 y1 ];
@@ -521,8 +532,9 @@ attach variables [yrmov_ff_word]                [y0 y1 _  _];
 attach variables [yrmov_ff_long]                [_  _  a  b];
 attach variables [yrmov2_d yrmov2_d2]           [a  b];
 
-attach variables [lmov_op1]                     [a1 b1 x1 y1 _  _  _  _  a1 b1 _  _  _  _  _  _];
-attach variables [lmov_op2]                     [a0 b0 x0 y0 _  _  _  _  a0 b0 _  _  _  _  _  _];
+attach variables [lmov_op1]                     [a1 b1 x1 y1 _  _  _  _  _  _  _  _  _  _  _  _];
+attach variables [lmov_op2]                     [a0 b0 x0 y0 _  _  _  _  _  _  _  _  _  _  _  _];
+attach variables [lmov_acc]                     [_  _  _  _  _  _  _  _  a  b  _  _  _  _  _  _];
 attach variables [lmov_opab1]                   [_  _  _  _  _  _  _  _  _  _  a  b  _  _  _  _];
 attach variables [lmov_opab2]                   [_  _  _  _  _  _  _  _  _  _  b  a  _  _  _  _];
 attach names     [lmov_opname]                  [a10 b10 x y _  _  _  _  a  b  ab ba _  _  _  _];
@@ -539,7 +551,8 @@ attach variables [xymov_op2_word]               [y0 y1 _  _ ];
 attach variables [xymov_op1_long]               [_  _  a  b ];
 attach variables [xymov_op2_long]               [_  _  a  b ];
 
-attach names [parcond_name cc1_name cc2_name]   [cc_hs ge ne pl nn ec lc gt cs_lo lt eq mi nr es ls le];
+attach names [parcond_name cc1_name 
+	          cc2_name trap_cccc_name ]           [cc_hs ge ne pl nn ec lc gt cs_lo lt eq mi nr es ls le];
 attach variables [cc2_rn]                       [r0 r1 r2 r3 r4 r5 r6 r7];
 attach variables [cc2_nn]                       [n0 n1 n2 n3 n4 n5 n6 n7];
 attach variables [bra_rn]                       [r0 r1 r2 r3 r4 r5 r6 r7];
@@ -573,20 +586,20 @@ attach variables [lua_rrr]                      [r0 r1 r2 r3 r4 r5 r6 r7];
 
 macro acc_write_signed24(dst, src) {
   local tmp:3 = src;
-  local tmp2:7 = sext(tmp);
-  dst = tmp2 << 24;
+  dst[0, 24] = 0;
+  dst[24, 32] = sext(tmp);
 }
 
 macro acc_write_unsigned24(dst, src) {
   local tmp:3 = src;
-  local tmp2:7 = zext(tmp);
-  dst = tmp2 << 24;
+  dst[0, 24] = 0;
+  dst[24, 32] = zext(tmp);
 }
 
 macro acc_write_unsigned8(dst, src) {
   local tmp:1 = src;
-  local tmp2:7 = zext(tmp);
-  dst = tmp2 << 24;
+  dst[0, 24] = 0;
+  dst[24, 32] = zext(tmp);
 }
 
 macro stack_push(ophi, oplo) {
@@ -611,46 +624,86 @@ macro stack_pop(ophi, oplo) {
   ssl=combined[0,24];
 }
 
+macro add_flags(op1,op2) {
+  $(cf) = carry(op1,op2);
+  $(vf) = scarry(op1,op2);
+}
+
+macro sub_flags(op1,op2) {
+  $(cf) = op1 < op2;
+  $(vf) = sborrow(op1,op2);
+}
+
+macro neg_flags(op1) {
+  $(cf) = (op1 != 0);
+  $(vf) = sborrow(0,op1);
+}
+
+macro result_flags(result) {
+  $(nf) = result s< 0;
+  $(zf) = result == 0;
+}
+
+
+
 macro calc_cond(x, dst) {
   if
-  ( ($(cf)==0 & x==0b0000)
-  | ($(cf)==1 & x==0b1000)
-  | ($(ef)==0 & x==0b0101)
-  | ($(zf)==1 & x==0b1010)
-  | ($(ef)==1 & x==0b1101)
-  | (($(nf)^$(vf))==0 & x==0b0001)
-  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
-  | ($(lf)==0 & x==0b0110)
-  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
-  | ($(lf)==1 & x==0b1110)
-  | (($(nf)^$(vf))==1 & x==0b1001)
-  | ($(nf)==1 & x==0b1011)
-  | ($(zf)==0 & x==0b0010)
-  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
-  | ($(nf)==0 & x==0b0011)
-  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
-  ) goto dst;
+  ( (!$(cf)                   && x==0b0000)
+  | ($(cf)                    && x==0b1000)
+  | (!$(ef)                   && x==0b0101)
+# EQ, Z=1
+  | ($(zf)                    && x==0b1010)
+  | ($(ef)                    && x==0b1101)
+# GE, N^V=0
+  | ($(nf)==$(vf)             && x==0b0001)
+# GT, Z+(N^V)=0
+  | ((!$(zf) && $(nf)==$(vf)) && x==0b0111)
+  | (!$(lf)                   && x==0b0110)
+# LE, Z+(N^V)=1
+  | (($(zf)||($(nf)!=$(vf)))  && x==0b1111)
+  | ($(lf)                    && x==0b1110)
+# LT, N^V=1
+  | ($(nf)!=$(vf)             && x==0b1001)
+  | ($(nf)                    && x==0b1011)
+# NE, Z=0
+  | (!$(zf)                   && x==0b0010)
+# NR, Z+(~U&~E)=1
+  | ($(zf)||(!$(uf)&&!$(ef))  && x==0b1100)
+  | (!$(nf)                   && x==0b0011)
+# NN, Z+(~U&~E)=0
+  | (!$(zf)&&($(uf)||$(ef))   && x==0b0100)
+  ) 
+  goto dst;
 }
 
 macro calc_cond_call(x, dst) {
   if (!
-  ( ($(cf)==0 & x==0b0000)
-  | ($(cf)==1 & x==0b1000)
-  | ($(ef)==0 & x==0b0101)
-  | ($(zf)==1 & x==0b1010)
-  | ($(ef)==1 & x==0b1101)
-  | (($(nf)^$(vf))==0 & x==0b0001)
-  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
-  | ($(lf)==0 & x==0b0110)
-  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
-  | ($(lf)==1 & x==0b1110)
-  | (($(nf)^$(vf))==1 & x==0b1001)
-  | ($(nf)==1 & x==0b1011)
-  | ($(zf)==0 & x==0b0010)
-  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
-  | ($(nf)==0 & x==0b0011)
-  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
-  )) goto <calc_cond_call_end>;
+  ( (!$(cf)                   && x==0b0000)
+  | ($(cf)                    && x==0b1000)
+  | (!$(ef)                   && x==0b0101)
+# EQ, Z=1
+  | ($(zf)                    && x==0b1010)
+  | ($(ef)                    && x==0b1101)
+# GE, N^V=0
+  | ($(nf)==$(vf)             && x==0b0001)
+# GT, Z+(N^V)=0
+  | ((!$(zf) && $(nf)==$(vf)) && x==0b0111)
+  | (!$(lf)                   && x==0b0110)
+# LE, Z+(N^V)=1
+  | (($(zf)||($(nf)!=$(vf)))  && x==0b1111)
+  | ($(lf)                    && x==0b1110)
+# LT, N^V=1
+  | ($(nf)!=$(vf)             && x==0b1001)
+  | ($(nf)                    && x==0b1011)
+# NE, Z=0
+  | (!$(zf)                   && x==0b0010)
+# NR, Z+(~U&~E)=1
+  | ($(zf)||(!$(uf)&&!$(ef))  && x==0b1100)
+  | (!$(nf)                   && x==0b0011)
+# NN, Z+(~U&~E)=0
+  | (!$(zf)&&($(uf)||$(ef))   && x==0b0100)
+  ) 
+  ) goto <calc_cond_call_end>;
 
   stack_push(inst_next, sr);
   call dst;
@@ -660,25 +713,34 @@ macro calc_cond_call(x, dst) {
 # Workaround: feeding inst_next into the macro ain't work
 macro calc_cond_inst_next(x) {
   if
-  ( ($(cf)==0 & x==0b0000)
-  | ($(cf)==1 & x==0b1000)
-  | ($(ef)==0 & x==0b0101)
-  | ($(zf)==1 & x==0b1010)
-  | ($(ef)==1 & x==0b1101)
-  | (($(nf)^$(vf))==0 & x==0b0001)
-  | (($(zf)+($(nf)^$(vf)))==0 & x==0b0111)
-  | ($(lf)==0 & x==0b0110)
-  | (($(zf)+($(nf)^$(vf)))==1 & x==0b1111)
-  | ($(lf)==1 & x==0b1110)
-  | (($(nf)^$(vf))==1 & x==0b1001)
-  | ($(nf)==1 & x==0b1011)
-  | ($(zf)==0 & x==0b0010)
-  | ($(zf)+(!$(uf) & !$(ef))==1 & x==0b1100)
-  | ($(nf)==0 & x==0b0011)
-  | ($(zf)+(!$(uf) & !$(ef))==0 & x==0b0100)
+  ( 
+  ( (!$(cf)                   && x==0b0000)
+  | ($(cf)                    && x==0b1000)
+  | (!$(ef)                   && x==0b0101)
+# EQ, Z=1
+  | ($(zf)                    && x==0b1010)
+  | ($(ef)                    && x==0b1101)
+# GE, N^V=0
+  | ($(nf)==$(vf)             && x==0b0001)
+# GT, Z+(N^V)=0
+  | ((!$(zf) && $(nf)==$(vf)) && x==0b0111)
+  | (!$(lf)                   && x==0b0110)
+# LE, Z+(N^V)=1
+  | (($(zf)||($(nf)!=$(vf)))  && x==0b1111)
+  | ($(lf)                    && x==0b1110)
+# LT, N^V=1
+  | ($(nf)!=$(vf)             && x==0b1001)
+  | ($(nf)                    && x==0b1011)
+# NE, Z=0
+  | (!$(zf)                   && x==0b0010)
+# NR, Z+(~U&~E)=1
+  | ($(zf)||(!$(uf)&&!$(ef))  && x==0b1100)
+  | (!$(nf)                   && x==0b0011)
+# NN, Z+(~U&~E)=0
+  | (!$(zf)&&($(uf)||$(ef))   && x==0b0100)
+  ) 
   ) goto inst_next;
 }
-
 
 macro calc_flags(mask, cbit, vbit, zbit, nbit, ubit, ebit, lbit, sbit) {
   local cf_cond:1 = mask & 0b00000001;
@@ -716,8 +778,16 @@ macro calc_flags(mask, cbit, vbit, zbit, nbit, ubit, ebit, lbit, sbit) {
   <post_sf>
 }
 
+define pcodeop proc_illegal;
 define pcodeop proc_pflush;
+define pcodeop proc_pflushun;
+define pcodeop proc_pfree;
+define pcodeop proc_reset;
 define pcodeop proc_round;
+define pcodeop proc_stop;
+define pcodeop proc_trap;
+define pcodeop proc_wait;
+define pcodeop proc_div_step;
 
 
 # Effective Addressing Mode Encoding 1: page 12-18
@@ -837,39 +907,39 @@ parMove:xmov_reg8,"x:"^ea1                          is (xmov_reg8 & inst_23_22=0
 parMove:ea1_imm24,xmov_reg8                         is (xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                              { xmov_reg8=ea1_imm24:1; }
 parMove:"x:"^xmov_addr6,xmov_reg8                   is xmov_addr6 & xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                   { xmov_reg8=*[xmem] xmov_addr6; }
 parMove:xmov_reg8,"x:"^xmov_addr6                   is xmov_addr6 & xmov_reg8 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                   { *[xmem]:3 xmov_addr6=xmov_reg8; }
-inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg8       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx             { xmov2_reg8=*[xmem](ea1_rrr_rn+rn_xxxx); }
-inst:"move" xmov2_reg8, "x:"^(ea1_rrr_rn + rn_xxxx)       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx             { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg8; }
-inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg8  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx   { xmov3_reg8=*[xmem](ea1_rrr_rn+xmov2_rn_xxx); }
-inst:"move" xmov3_reg8, "x:"^(ea1_rrr_rn + xmov2_rn_xxx)  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx   { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg8; }
+inst:"move" "x:"^(ea1_rrr_rn+rn_xxxx),xmov2_reg8       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx             { xmov2_reg8=*[xmem](ea1_rrr_rn+rn_xxxx); }
+inst:"move" xmov2_reg8,"x:"^(ea1_rrr_rn+rn_xxxx)       is xmov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx             { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg8; }
+inst:"move" "x:"^(ea1_rrr_rn+xmov2_rn_xxx),xmov3_reg8  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx   { xmov3_reg8=*[xmem](ea1_rrr_rn+xmov2_rn_xxx); }
+inst:"move" xmov3_reg8,"x:"^(ea1_rrr_rn+xmov2_rn_xxx)  is xmov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx   { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg8; }
 
 parMove:"x:"^ea1,xmov_reg24                         is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1                                   { xmov_reg24=*[xmem]:3 ea1; }
 parMove:xmov_reg24,"x:"^ea1                         is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=0) ... & ea1                                   { *[xmem]:3 ea1=xmov_reg24; }
 parMove:ea1_imm24,xmov_reg24                        is (xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { xmov_reg24=ea1_imm24; }
 parMove:"x:"^xmov_addr6,xmov_reg24                  is xmov_addr6 & xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                  { xmov_reg24=*[xmem]:3 xmov_addr6; }
 parMove:xmov_reg24,"x:"^xmov_addr6                  is xmov_addr6 & xmov_reg24 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                  { *[xmem]:3 xmov_addr6=xmov_reg24; }
-inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg24      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { xmov2_reg24=*[xmem]:3 (ea1_rrr_rn+rn_xxxx); }
-inst:"move" xmov2_reg24, "x:"^(ea1_rrr_rn + rn_xxxx)      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3 (ea1_rrr_rn+rn_xxxx)=xmov2_reg24; }
-inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg24 is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { xmov3_reg24=*[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx); }
-inst:"move" xmov3_reg24, "x:"^(ea1_rrr_rn + xmov2_rn_xxx) is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg24; }
+inst:"move" "x:"^(ea1_rrr_rn+rn_xxxx),xmov2_reg24      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { xmov2_reg24=*[xmem]:3 (ea1_rrr_rn+rn_xxxx); }
+inst:"move" xmov2_reg24,"x:"^(ea1_rrr_rn+rn_xxxx)      is xmov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3 (ea1_rrr_rn+rn_xxxx)=xmov2_reg24; }
+inst:"move" "x:"^(ea1_rrr_rn+xmov2_rn_xxx),xmov3_reg24 is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { xmov3_reg24=*[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx); }
+inst:"move" xmov3_reg24,"x:"^(ea1_rrr_rn+xmov2_rn_xxx) is xmov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3 (ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg24; }
 
 parMove:"x:"^ea1,xmov_reg56                         is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1                                   { acc_write_signed24(xmov_reg56, *[xmem]ea1); }
 parMove:xmov_reg56,"x:"^ea1                         is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=0) ... & ea1                                   { *[xmem]:3 ea1=xmov_reg56[24,24]; }
 parMove:ea1_imm24,xmov_reg56                        is (xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { acc_write_signed24(xmov_reg56, ea1_imm24); }
 parMove:"x:"^xmov_addr6,xmov_reg56                  is xmov_addr6 & xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=1                                  { acc_write_signed24(xmov_reg56, *[xmem]:3 xmov_addr6); }
 parMove:xmov_reg56,"x:"^xmov_addr6                  is xmov_addr6 & xmov_reg56 & inst_23_22=0b01 & inst_19=0 & inst_14=0 & inst_15=0                                  { *[xmem]:3 xmov_addr6=xmov_reg56[24,24]; }
-inst:"move" "x:"^(ea1_rrr_rn + rn_xxxx), xmov2_reg56      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(xmov2_reg56, *[xmem]:3(ea1_rrr_rn+rn_xxxx)); }
-inst:"move" xmov2_reg56, "x:"^(ea1_rrr_rn + rn_xxxx)      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg56[24,24]; }
-inst:"move" "x:"^(ea1_rrr_rn + xmov2_rn_xxx), xmov3_reg56 is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { acc_write_signed24(xmov3_reg56, *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)); }
-inst:"move" xmov3_reg56, "x:"^(ea1_rrr_rn + xmov2_rn_xxx) is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg56[24,24]; }
+inst:"move" "x:"^(ea1_rrr_rn+rn_xxxx),xmov2_reg56      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(xmov2_reg56, *[xmem]:3(ea1_rrr_rn+rn_xxxx)); }
+inst:"move" xmov2_reg56,"x:"^(ea1_rrr_rn+rn_xxxx)      is xmov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101001110 & inst_7=1 & inst_6=0; rn_xxxx            { *[xmem]:3(ea1_rrr_rn+rn_xxxx)=xmov2_reg56[24,24]; }
+inst:"move" "x:"^(ea1_rrr_rn+xmov2_rn_xxx),xmov3_reg56 is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=1 & xmov2_rn_xxx  { acc_write_signed24(xmov3_reg56, *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)); }
+inst:"move" xmov3_reg56,"x:"^(ea1_rrr_rn+xmov2_rn_xxx) is xmov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=0 & inst_4=0 & xmov2_rn_xxx  { *[xmem]:3(ea1_rrr_rn+xmov2_rn_xxx)=xmov3_reg56[24,24]; }
 
 # X Memory And Register Data Move
 xrmov_op1_24:xrmov_ff_word is xrmov_ff < 2 & xrmov_ff_word { export xrmov_ff_word; }
 xrmov_op1_56:xrmov_ff_long is xrmov_ff > 1 & xrmov_ff_long { export xrmov_ff_long; }
 
-parMove:"x:"^ea1,xrmov_op1_24 xrmov_s2, xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { xrmov_op1_24=*[xmem]:3 ea1; xrmov_d2=xrmov_s2[24,24]; }
-parMove:xrmov_op1_24,"x:"^ea1 xrmov_s2, xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_24; xrmov_d2=xrmov_s2[24,24]; }
-parMove:"x:"^ea1,xrmov_op1_56 xrmov_s2, xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { acc_write_signed24(xrmov_op1_56,*[xmem]:3 ea1); xrmov_d2=xrmov_s2[24,24]; }
-parMove:xrmov_op1_56,"x:"^ea1 xrmov_s2, xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_56[24,24]; xrmov_d2=xrmov_s2[24,24]; }
+parMove:"x:"^ea1,xrmov_op1_24 xrmov_s2,xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { xrmov_op1_24=*[xmem]:3 ea1; xrmov_d2=xrmov_s2[24,24]; }
+parMove:xrmov_op1_24,"x:"^ea1 xrmov_s2,xrmov_d2    is (xrmov_op1_24 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_24; xrmov_d2=xrmov_s2[24,24]; }
+parMove:"x:"^ea1,xrmov_op1_56 xrmov_s2,xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=1) ... & ea1 { acc_write_signed24(xrmov_op1_56,*[xmem]:3 ea1); xrmov_d2=xrmov_s2[24,24]; }
+parMove:xrmov_op1_56,"x:"^ea1 xrmov_s2,xrmov_d2    is (xrmov_op1_56 & xrmov_s2 & xrmov_d2 & inst_23_20=0b0001 & inst_14=0 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=xrmov_op1_56[24,24]; xrmov_d2=xrmov_s2[24,24]; }
 parMove:xrmov2_d,"x:"^ea1 "x0"^,xrmov2_d2           is (xrmov2_d & xrmov2_d2 & inst_23_17=0b0000100 & inst_15_14=0b00) ... & ea1 { *[xmem]:3 ea1=xrmov2_d[24,24]; acc_write_signed24(xrmov2_d,x0); }
 
 # Y Memory Data Move
@@ -903,39 +973,39 @@ parMove:ymov_reg8,"y:"^ea1                          is (ymov_reg8 & inst_23_22=0
 parMove:ea1_imm24,ymov_reg8                         is (ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                              { ymov_reg8=ea1_imm24:1; }
 parMove:"y:"^ymov_addr6,ymov_reg8                   is ymov_addr6 & ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                   { ymov_reg8=*[ymem] ymov_addr6; }
 parMove:ymov_reg8,"y:"^ymov_addr6                   is ymov_addr6 & ymov_reg8 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                   { *[ymem]:3 ymov_addr6=ymov_reg8; }
-inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg8       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx             { ymov2_reg8=*[ymem](ea1_rrr_rn+rn_xxxx); }
-inst:"move" ymov2_reg8, "y:"^(ea1_rrr_rn + rn_xxxx)       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx             { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg8; }
-inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg8  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx   { ymov3_reg8=*[ymem](ea1_rrr_rn+ymov2_rn_xxx); }
-inst:"move" ymov3_reg8, "y:"^(ea1_rrr_rn + ymov2_rn_xxx)  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx   { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg8; }
+inst:"move" "y:"^(ea1_rrr_rn+rn_xxxx),ymov2_reg8       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx             { ymov2_reg8=*[ymem](ea1_rrr_rn+rn_xxxx); }
+inst:"move" ymov2_reg8,"y:"^(ea1_rrr_rn+rn_xxxx)       is ymov2_reg8 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx             { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg8; }
+inst:"move" "y:"^(ea1_rrr_rn+ymov2_rn_xxx),ymov3_reg8  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx   { ymov3_reg8=*[ymem](ea1_rrr_rn+ymov2_rn_xxx); }
+inst:"move" ymov3_reg8,"y:"^(ea1_rrr_rn+ymov2_rn_xxx)  is ymov3_reg8 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx   { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg8; }
 
 parMove:"y:"^ea1,ymov_reg24                         is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1                                   { ymov_reg24=*[ymem]:3 ea1; }
 parMove:ymov_reg24,"y:"^ea1                         is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=0) ... & ea1                                   { *[ymem]:3 ea1=ymov_reg24; }
 parMove:ea1_imm24,ymov_reg24                        is (ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { ymov_reg24=ea1_imm24; }
 parMove:"y:"^ymov_addr6,ymov_reg24                  is ymov_addr6 & ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                  { ymov_reg24=*[ymem]:3 ymov_addr6; }
 parMove:ymov_reg24,"y:"^ymov_addr6                  is ymov_addr6 & ymov_reg24 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                  { *[ymem]:3 ymov_addr6=ymov_reg24; }
-inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg24      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { ymov2_reg24=*[ymem]:3 (ea1_rrr_rn+rn_xxxx); }
-inst:"move" ymov2_reg24, "y:"^(ea1_rrr_rn + rn_xxxx)      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3 (ea1_rrr_rn+rn_xxxx)=ymov2_reg24; }
-inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg24 is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { ymov3_reg24=*[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx); }
-inst:"move" ymov3_reg24, "y:"^(ea1_rrr_rn + ymov2_rn_xxx) is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg24; }
+inst:"move" "y:"^(ea1_rrr_rn+rn_xxxx),ymov2_reg24      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { ymov2_reg24=*[ymem]:3 (ea1_rrr_rn+rn_xxxx); }
+inst:"move" ymov2_reg24,"y:"^(ea1_rrr_rn+rn_xxxx)      is ymov2_reg24 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3 (ea1_rrr_rn+rn_xxxx)=ymov2_reg24; }
+inst:"move" "y:"^(ea1_rrr_rn+ymov2_rn_xxx),ymov3_reg24 is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { ymov3_reg24=*[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx); }
+inst:"move" ymov3_reg24,"y:"^(ea1_rrr_rn+ymov2_rn_xxx) is ymov3_reg24 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3 (ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg24; }
 
 parMove:"y:"^ea1,ymov_reg56                         is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1                                   { acc_write_signed24(ymov_reg56, *[ymem]:3 ea1); }
 parMove:ymov_reg56,"y:"^ea1                         is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=0) ... & ea1                                   { *[ymem]:3 ea1=ymov_reg56[24,24]; }
 parMove:ea1_imm24,ymov_reg56                        is (ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=1 & inst_15=1) ... & ea1_imm24                             { acc_write_signed24(ymov_reg56, ea1_imm24); }
 parMove:"y:"^ymov_addr6,ymov_reg56                  is ymov_addr6 & ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=1                                  { acc_write_signed24(ymov_reg56,*[ymem]:3 ymov_addr6); }
 parMove:ymov_reg56,"y:"^ymov_addr6                  is ymov_addr6 & ymov_reg56 & inst_23_22=0b01 & inst_19=1 & inst_14=0 & inst_15=0                                  { *[ymem]:3 ymov_addr6=ymov_reg56[24,24]; }
-inst:"move" "y:"^(ea1_rrr_rn + rn_xxxx), ymov2_reg56      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(ymov2_reg56,*[ymem]:3(ea1_rrr_rn+rn_xxxx)); }
-inst:"move" ymov2_reg56, "y:"^(ea1_rrr_rn + rn_xxxx)      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg56[24,24]; }
-inst:"move" "y:"^(ea1_rrr_rn + ymov2_rn_xxx), ymov3_reg56 is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { acc_write_signed24(ymov3_reg56,*[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)); }
-inst:"move" ymov3_reg56, "y:"^(ea1_rrr_rn + ymov2_rn_xxx) is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg56[24,24]; }
+inst:"move" "y:"^(ea1_rrr_rn+rn_xxxx),ymov2_reg56      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=1; rn_xxxx            { acc_write_signed24(ymov2_reg56,*[ymem]:3(ea1_rrr_rn+rn_xxxx)); }
+inst:"move" ymov2_reg56,"y:"^(ea1_rrr_rn+rn_xxxx)      is ymov2_reg56 & ea1_rrr_rn & inst_23_11=0b0000101101110 & inst_7=1 & inst_6=0; rn_xxxx            { *[ymem]:3(ea1_rrr_rn+rn_xxxx)=ymov2_reg56[24,24]; }
+inst:"move" "y:"^(ea1_rrr_rn+ymov2_rn_xxx),ymov3_reg56 is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=1 & ymov2_rn_xxx  { acc_write_signed24(ymov3_reg56,*[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)); }
+inst:"move" ymov3_reg56,"y:"^(ea1_rrr_rn+ymov2_rn_xxx) is ymov3_reg56 & ea1_rrr_rn & inst_23_17=0b0000001 & inst_7=1 & inst_5=1 & inst_4=0 & ymov2_rn_xxx  { *[ymem]:3(ea1_rrr_rn+ymov2_rn_xxx)=ymov3_reg56[24,24]; }
 
 # y Memory And Register Data Move
 yrmov_op1_24:yrmov_ff_word is yrmov_ff < 2 & yrmov_ff_word { export yrmov_ff_word; }
 yrmov_op1_56:yrmov_ff_long is yrmov_ff > 1 & yrmov_ff_long { export yrmov_ff_long; }
  
-parMove:yrmov_s, yrmov_d "y:"^ea1,yrmov_op1_24       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; yrmov_op1_24=*[ymem]:3 ea1; }
-parMove:yrmov_s, yrmov_d yrmov_op1_24,"y:"^ea1       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]:3 ea1=yrmov_op1_24; }
-parMove:yrmov_s, yrmov_d "y:"^ea1,yrmov_op1_56       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; acc_write_signed24(yrmov_op1_56,*[ymem]ea1); }
-parMove:yrmov_s, yrmov_d yrmov_op1_56,"y:"^ea1       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]ea1=yrmov_op1_56[24,24]; }
+parMove:yrmov_s,yrmov_d "y:"^ea1,yrmov_op1_24       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; yrmov_op1_24=*[ymem]:3 ea1; }
+parMove:yrmov_s,yrmov_d yrmov_op1_24,"y:"^ea1       is (yrmov_op1_24 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]:3 ea1=yrmov_op1_24; }
+parMove:yrmov_s,yrmov_d "y:"^ea1,yrmov_op1_56       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=1) ... & ea1 { yrmov_d=yrmov_s[24,24]; acc_write_signed24(yrmov_op1_56,*[ymem]ea1); }
+parMove:yrmov_s,yrmov_d yrmov_op1_56,"y:"^ea1       is (yrmov_op1_56 & yrmov_s & yrmov_d & inst_23_20=0b0001 & inst_14=1 & inst_15=0) ... & ea1 { yrmov_d=yrmov_s[24,24]; *[ymem]ea1=yrmov_op1_56[24,24]; }
 parMove:"y0"^,yrmov2_d2 yrmov2_d,"y:"^ea1            is (yrmov2_d & yrmov2_d2 & inst_23_17=0b0000100 & inst_15_14=0b10) ... & ea1 { acc_write_signed24(yrmov2_d,y0); *[ymem]:3 ea1=yrmov2_d[24,24]; }
 
 # Long Memory Data Move
@@ -943,15 +1013,23 @@ parMove:"y0"^,yrmov2_d2 yrmov2_d,"y:"^ea1            is (yrmov2_d & yrmov2_d2 & 
 
 lmov_addr6:lmov_aaaaaa       is lmov_aaaaaa { local tmp:3 = lmov_aaaaaa; export tmp; }
 
-parMove:"L:"^ea1, lmov_opname                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { lmov_op1=*[xmem]ea1; lmov_op2=*[ymem]ea1; }
-parMove:lmov_opname, "L:"^ea1                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]ea1=lmov_op1; *[ymem]ea1=lmov_op2; }
-parMove:"L:"^ea1, lmov_opname                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { acc_write_signed24(lmov_opab1,*[xmem]:3 ea1); acc_write_signed24(lmov_opab2,*[ymem]:3 ea1); }
-parMove:lmov_opname, "L:"^ea1                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=lmov_opab1[24,24]; *[ymem]:3 ea1=lmov_opab2[24,24]; }
+parMove:"L:"^ea1,lmov_opname                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 3 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { lmov_op1=*[xmem]ea1; lmov_op2=*[ymem]ea1; }
+parMove:lmov_opname,"L:"^ea1                        is (lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 3 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]ea1=lmov_op1; *[ymem]ea1=lmov_op2; }
 
-parMove:"L:"^lmov_addr6, lmov_opname                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { lmov_op1=*[xmem]lmov_addr6; lmov_op2=*[ymem]lmov_addr6; }
-parMove:lmov_opname, "L:"^lmov_addr6                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 9 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]lmov_addr6=lmov_op1; *[ymem]lmov_addr6=lmov_op2; }
-parMove:"L:"^lmov_addr6, lmov_opname                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { acc_write_signed24(lmov_opab1,*[xmem]:3 lmov_addr6); acc_write_signed24(lmov_opab2,*[ymem]:3 lmov_addr6); }
-parMove:lmov_opname, "L:"^lmov_addr6                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]:3 lmov_addr6=lmov_opab1[24,24]; *[ymem]:3 lmov_addr6=lmov_opab2[24,24]; }
+parMove:"L:"^ea1,lmov_opname                        is (lmov_acc & lmov_opname & (lmov_op=8|lmov_op=9) & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { lmov_acc[24,32]=sext(*[xmem]:3 ea1); lmov_acc[0,24]=*[ymem]ea1; }
+parMove:lmov_opname,"L:"^ea1                        is (lmov_acc & lmov_opname & (lmov_op=8|lmov_op=9) & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]ea1:3=lmov_acc[24,24]; *[ymem]ea1:3=lmov_acc[0,24]; }
+
+parMove:"L:"^ea1,lmov_opname                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=1) ... & ea1 { lmov_opab1[24,32]=sext(*[xmem]:3 ea1); lmov_opab1[0,24]=0; lmov_opab2[24,32]=sext(*[ymem]:3 ea1); lmov_opab2[0,24]=0; }
+parMove:lmov_opname,"L:"^ea1                        is (lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >= 10 & inst_23_20=0b0100 & inst_18=0 & inst_14=1 & inst_15=0) ... & ea1 { *[xmem]:3 ea1=lmov_opab1[24,24]; *[ymem]:3 ea1=lmov_opab2[24,24]; }
+
+parMove:"L:"^lmov_addr6,lmov_opname                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 3 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { lmov_op1=*[xmem]lmov_addr6; lmov_op2=*[ymem]lmov_addr6; }
+parMove:lmov_opname,"L:"^lmov_addr6                 is lmov_op1 & lmov_op2 & lmov_opname & lmov_op <= 3 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]lmov_addr6=lmov_op1; *[ymem]lmov_addr6=lmov_op2; }
+
+parMove:"L:"^lmov_addr6,lmov_opname                 is lmov_acc & lmov_opname & (lmov_op=8|lmov_op=9) & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { lmov_acc[24,32]=sext(*[xmem]:3 lmov_addr6); lmov_acc[0,24]=*[ymem]:3 lmov_addr6; }
+parMove:lmov_opname,"L:"^lmov_addr6                 is lmov_acc & lmov_opname & (lmov_op=8|lmov_op=9) & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]:3 lmov_addr6=lmov_acc[24,24]; *[ymem]:3 lmov_addr6=lmov_acc[0,24]; }
+
+parMove:"L:"^lmov_addr6,lmov_opname                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=1 & lmov_addr6 { lmov_opab1[24,32]=sext(*[xmem]:3 lmov_addr6); lmov_opab1[0,24]=0; lmov_opab2[24,32]=sext(*[ymem]:3 lmov_addr6); lmov_opab2[0,24]=0; }
+parMove:lmov_opname,"L:"^lmov_addr6                 is lmov_opab1 & lmov_opab2 & lmov_opname & lmov_op >=10 & inst_23_20=0b0100 & inst_18=0 & inst_14=0 & inst_15=0 & lmov_addr6 { *[xmem]:3 lmov_addr6=lmov_opab1[24,24]; *[ymem]:3 lmov_addr6=lmov_opab2[24,24]; }
 
 # XY Memory Data Move
 # W is inst_15 for X
@@ -1010,27 +1088,27 @@ movec_reg56:movec_eeeeee_long is (movec_eeeeee=14|movec_eeeeee=15) & movec_eeeee
 
 
 
-inst:"movec" "x:"^ea1, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[xmem]:3 ea1; }
-inst:"movec" "y:"^ea1, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[ymem]:3 ea1; }
-inst:"movec" movec_s1, "x:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b001 & movec_s1 & movec_ddddd) ... & ea1 { *[xmem]:3 ea1=movec_s1; }
-inst:"movec" movec_s1, "y:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b011 & movec_s1 & movec_ddddd) ... & ea1 { *[ymem]:3 ea1=movec_s1; }
+inst:"movec" "x:"^ea1,movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[xmem]:3 ea1; }
+inst:"movec" "y:"^ea1,movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1 { movec_d1=*[ymem]:3 ea1; }
+inst:"movec" movec_s1,"x:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b001 & movec_s1 & movec_ddddd) ... & ea1 { *[xmem]:3 ea1=movec_s1; }
+inst:"movec" movec_s1,"y:"^ea1 is (inst_23_14=0b0000010101 & inst_7_5=0b011 & movec_s1 & movec_ddddd) ... & ea1 { *[ymem]:3 ea1=movec_s1; }
 
-inst:"movec" ea1_imm24, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
-inst:"movec" ea1_imm24, movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
+inst:"movec" ea1_imm24,movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b001 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
+inst:"movec" ea1_imm24,movec_d1 is (inst_23_14=0b0000010111 & inst_7_5=0b011 & movec_d1 & movec_ddddd) ... & ea1_imm24 { movec_d1=ea1_imm24; }
 
-inst:"movec" "x:"^movec_a6, movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b001 & movec_d1 & movec_ddddd { movec_d1=*[xmem]:3 movec_a6; }
-inst:"movec" "y:"^movec_a6, movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b011 & movec_d1 & movec_ddddd { movec_d1=*[ymem]:3 movec_a6; }
-inst:"movec" movec_s1, "x:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b001 & movec_s1 & movec_ddddd { *[xmem]:3 movec_a6=movec_s1; }
-inst:"movec" movec_s1, "y:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b011 & movec_s1 & movec_ddddd { *[ymem]:3 movec_a6=movec_s1; }
+inst:"movec" "x:"^movec_a6,movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b001 & movec_d1 & movec_ddddd { movec_d1=*[xmem]:3 movec_a6; }
+inst:"movec" "y:"^movec_a6,movec_d1 is inst_23_14=0b0000010110 & movec_a6 & inst_7_5=0b011 & movec_d1 & movec_ddddd { movec_d1=*[ymem]:3 movec_a6; }
+inst:"movec" movec_s1,"x:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b001 & movec_s1 & movec_ddddd { *[xmem]:3 movec_a6=movec_s1; }
+inst:"movec" movec_s1,"y:"^movec_a6 is inst_23_14=0b0000010100 & movec_a6 & inst_7_5=0b011 & movec_s1 & movec_ddddd { *[ymem]:3 movec_a6=movec_s1; }
 
-inst:"movec" movec_s1, movec_reg8  is inst_23_14=0b0000010001 & movec_s1 & movec_reg8  & inst_7_5=0b101 { movec_reg8         = movec_s1[0,8]; }
-inst:"movec" movec_s1, movec_reg24 is inst_23_14=0b0000010001 & movec_s1 & movec_reg24 & inst_7_5=0b101 { movec_reg24        = movec_s1; }
-inst:"movec" movec_s1, movec_reg56 is inst_23_14=0b0000010001 & movec_s1 & movec_reg56 & inst_7_5=0b101 { movec_reg56[24,24] = movec_s1; }
-inst:"movec" movec_reg8, movec_d1  is inst_23_14=0b0000010011 & movec_d1 & movec_reg8  & inst_7_5=0b101 { movec_d1[0,8]      = movec_reg8; }
-inst:"movec" movec_reg24, movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg24 & inst_7_5=0b101 { movec_d1           = movec_reg24; }
-inst:"movec" movec_reg56, movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg56 & inst_7_5=0b101 { movec_d1           = movec_reg56[24,24]; }
+inst:"movec" movec_s1,movec_reg8  is inst_23_14=0b0000010001 & movec_s1 & movec_reg8  & inst_7_5=0b101 { movec_reg8         = movec_s1[0,8]; }
+inst:"movec" movec_s1,movec_reg24 is inst_23_14=0b0000010001 & movec_s1 & movec_reg24 & inst_7_5=0b101 { movec_reg24        = movec_s1; }
+inst:"movec" movec_s1,movec_reg56 is inst_23_14=0b0000010001 & movec_s1 & movec_reg56 & inst_7_5=0b101 { movec_reg56[24,24] = movec_s1; }
+inst:"movec" movec_reg8,movec_d1  is inst_23_14=0b0000010011 & movec_d1 & movec_reg8  & inst_7_5=0b101 { movec_d1[0,8]      = movec_reg8; }
+inst:"movec" movec_reg24,movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg24 & inst_7_5=0b101 { movec_d1           = movec_reg24; }
+inst:"movec" movec_reg56,movec_d1 is inst_23_14=0b0000010011 & movec_d1 & movec_reg56 & inst_7_5=0b101 { movec_d1           = movec_reg56[24,24]; }
 
-inst:"movec" "#"^iiiiiiii, movec_d1 is inst_23_16=0b00000101 & iiiiiiii & inst_7_5=0b101 & movec_d1 { movec_d1 = iiiiiiii; }
+inst:"movec" "#"^iiiiiiii,movec_d1 is inst_23_16=0b00000101 & iiiiiiii & inst_7_5=0b101 & movec_d1 { movec_d1 = iiiiiiii; }
 
 movem_a6: movem_aaaaaa is movem_aaaaaa { local tmp:3=movem_aaaaaa; export tmp; }
 movem_reg8:movem_dddddd_byte  is movem_dddddd>=10 & movem_dddddd<=11 & movem_dddddd_byte { export movem_dddddd_byte; }
@@ -1042,25 +1120,25 @@ movem_reg24:movem_dddddd_word is ( (movem_dddddd>=4 & movem_dddddd<=9)
                                  | (movem_dddddd>=56 & movem_dddddd<=63) ) & movem_dddddd_word { export movem_dddddd_word; }
 movem_reg56:movem_dddddd_long is (movem_dddddd=14|movem_dddddd=15) & movem_dddddd_long { export movem_dddddd_long; }
 
-inst:"movem" movem_reg8, "p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { *[progmem]:1 ea1=movem_reg8; }
+inst:"movem" movem_reg8,"p:"^ea1   is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { *[progmem]:1 ea1=movem_reg8; }
 inst:"movem" movem_reg24,"p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg24) ... & ea1 { *[progmem]:3 ea1=movem_reg24; }
 inst:"movem" movem_reg56,"p:"^ea1  is (inst_23_14=0b0000011101 & inst_7_6=0b10 & movem_reg56) ... & ea1 { *[progmem]:3 ea1=movem_reg56[24,24]; }
 
-inst:"movem" "p:"^ea1, movem_reg8  is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { movem_reg8 =*[progmem]:1 ea1; }
-inst:"movem" "p:"^ea1, movem_reg24 is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg24) ... & ea1 { movem_reg24=*[progmem]:3 ea1; }
-inst:"movem" "p:"^ea1, movem_reg56 is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg56) ... & ea1 { acc_write_signed24(movem_reg56,*[progmem]:3 ea1); }
+inst:"movem" "p:"^ea1,movem_reg8   is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg8) ...  & ea1 { movem_reg8 =*[progmem]:1 ea1; }
+inst:"movem" "p:"^ea1,movem_reg24  is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg24) ... & ea1 { movem_reg24=*[progmem]:3 ea1; }
+inst:"movem" "p:"^ea1,movem_reg56  is (inst_23_14=0b0000011111 & inst_7_6=0b10 & movem_reg56) ... & ea1 { acc_write_signed24(movem_reg56,*[progmem]:3 ea1); }
 
-inst:"movem" movem_reg8, "p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg8  & movem_a6 { *[progmem]:1 movem_a6=movem_reg8; }
+inst:"movem" movem_reg8,"p:"^movem_a6   is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg8  & movem_a6 { *[progmem]:1 movem_a6=movem_reg8; }
 inst:"movem" movem_reg24,"p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg24 & movem_a6 { *[progmem]:3 movem_a6=movem_reg24; }
 inst:"movem" movem_reg56,"p:"^movem_a6  is inst_23_14=0b0000011100 & inst_7_6=0b00 & movem_reg56 & movem_a6 { *[progmem]:3 movem_a6=movem_reg56[24,24]; }
 
-inst:"movem" "p:"^movem_a6, movem_reg8  is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg8  & movem_a6 { movem_reg8 =*[progmem]:1 movem_a6; }
-inst:"movem" "p:"^movem_a6, movem_reg24 is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg24 & movem_a6 { movem_reg24=*[progmem]:3 movem_a6; }
-inst:"movem" "p:"^movem_a6, movem_reg56 is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg56 & movem_a6 { acc_write_signed24(movem_reg56,*[progmem]:3 movem_a6); }
+inst:"movem" "p:"^movem_a6,movem_reg8   is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg8  & movem_a6 { movem_reg8 =*[progmem]:1 movem_a6; }
+inst:"movem" "p:"^movem_a6,movem_reg24  is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg24 & movem_a6 { movem_reg24=*[progmem]:3 movem_a6; }
+inst:"movem" "p:"^movem_a6,movem_reg56  is inst_23_14=0b0000011110 & inst_7_6=0b00 & movem_reg56 & movem_a6 { acc_write_signed24(movem_reg56,*[progmem]:3 movem_a6); }
 
 movep_pp:io_addr is movep_pppppp [io_addr=0xFFFFC0+movep_pppppp;] { local tmp:3=io_addr; export tmp; }
-movep_qq:io_addr is movep_qqqqqq [io_addr=0xFFFFB0+movep_qqqqqq;] { local tmp:3=io_addr; export tmp; }
-movep_qq2:io_addr is movep_qqqqq & movep_q [io_addr=0xFFFFB0 + movep_qqqqq + (movep_q<<5);] { local tmp:3=io_addr; export tmp; }
+movep_qq:io_addr is movep_qqqqqq [io_addr=0xFFFF80+movep_qqqqqq;] { local tmp:3=io_addr; export tmp; }
+movep_qq2:io_addr is movep_qqqqq & movep_q [io_addr=0xFFFF80 + movep_qqqqq + (movep_q<<5);] { local tmp:3=io_addr; export tmp; }
 movep_reg8:movep_dddddd_byte  is movep_dddddd>=10 & movep_dddddd<=11 & movep_dddddd_byte { export movep_dddddd_byte; }
 movep_reg24:movep_dddddd_word is ( (movep_dddddd>=4 & movep_dddddd<=9) 
                                  | (movep_dddddd>=12 & movep_dddddd<=13) 
@@ -1205,7 +1283,7 @@ parinst:"abs" d is inst_7=0 & JJJ=0b010 & kkk=0b110 & d & inst_23_12 {
 
 # ---------------- ADD ---------------------
 
-parinst:"adc" J, d is inst_7_5=0b001 & kkk=0b001 & J & d {
+parinst:"adc" J,d is inst_7_5=0b001 & kkk=0b001 & J & d {
   local tmp1:7=zext(J);
   local tmp2:7=zext($(cf));
   local sum:7=tmp1+tmp2;
@@ -1213,14 +1291,14 @@ parinst:"adc" J, d is inst_7_5=0b001 & kkk=0b001 & J & d {
   d = sum + d;
 }
 
-parinst:"add" JJJ_word, d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0 {
-  local op:7=sext(JJJ_word);
-  op = op << 24;
+parinst:"add" JJJ_word,d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0 {
+  local op:7=0;
+  op[24,32]=sext(JJJ_word);
   calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
   d = op + d;
 }
 
-parinst:"add" JJJ_long, d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0 {
+parinst:"add" JJJ_long,d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0 {
   local op:7=sext(JJJ_long);
   calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
   d = op + d;
@@ -1231,28 +1309,29 @@ parinst:"add" s,d is s & d & inst_7=0 & JJJ=1 & kkk=0 {
   d = d + s;
 }
 
-inst:"add" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0 & arith_iiiiii & d {
-  local op:7=arith_iiiiii;
-  op = op << 24;
+inst:"add" "#"^arith_iiiiii,d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0 & arith_iiiiii & d {
+  local op:7=0;
+  local tmp:1=arith_iiiiii;
+  op[24,32]=sext(tmp);
   calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
   d = d + op;
 }
 
-inst:"add" "#"^opt_extension, d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b000 & d ; opt_extension {
+inst:"add" "#"^opt_extension,d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b000 & d ; opt_extension {
   local tmp:3=opt_extension;
-  local op:7=sext(tmp);
-  op = op << 24;
+  local op:7=0;
+  op[24,32] = sext(tmp);
   calc_flags(0b11111111, scarry(op, d), carry(op, d), (op+d)==0, (op+d) s< 0, 0, 0, 0, 0);
   d = d + op;
 }
 
-parinst:"addl" s, d is inst_7=0 & JJJ=0b001 & kkk=0b010 & s & d {
+parinst:"addl" s,d is inst_7=0 & JJJ=0b001 & kkk=0b010 & s & d {
   local op:7=d*2;
   calc_flags(0b11111111, scarry(s, op), carry(d, d) | carry(s, op), (op+s)==0, (op+s) s< 0, 0, 0, 0, 0);
   d = s + op;
 }
 
-parinst:"addr" s, d is inst_7_4=0b0000 & kkk=0b010 & s & d {
+parinst:"addr" s,d is inst_7_4=0b0000 & kkk=0b010 & s & d {
   local op:7=d/2;
   calc_flags(0b11111111, scarry(s, op), carry(s, op), (op+s)==0, (op+s) s< 0, 0, 0, 0, 0);
   d = s + op;
@@ -1263,17 +1342,17 @@ parinst:"and" JJ,d is inst_7_6=0b01 & kkk=0b110 & d & JJ {
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"and" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b110 & arith_iiiiii & d {
+inst:"and" "#"^arith_iiiiii,d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b110 & arith_iiiiii & d {
   d[24,24]=d[24,24] & arith_iiiiii;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"and" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b110 & d; opt_extension {
+inst:"and" "#"^opt_extension,d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b110 & d; opt_extension {
   d[24,24]=d[24,24] & opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"andi" "#"^iiiiiiii, EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b101110 & EE { EE = EE & iiiiiiii; }
+inst:"andi" "#"^iiiiiiii,EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b101110 & EE { EE = EE & iiiiiiii; }
 
 # -------------------- Arithmetic Shift ------------------------
 
@@ -1284,7 +1363,7 @@ parinst:"asl" d is inst_7_4=0b0011 & d & kkk=0b010 {
   calc_flags(0b11111111, cbit, vbit, d==0, d s< 0, 0, 0, 0, 0);
 }
 
-inst:"asl" "#"^shift_iiiiii, ashift_S2, D is inst_23_8=0b0000110000011101 & ashift_S2 & shift_iiiiii & D {
+inst:"asl" "#"^shift_iiiiii,ashift_S2,D is inst_23_8=0b0000110000011101 & ashift_S2 & shift_iiiiii & D {
   local tmp=ashift_S2 << (shift_iiiiii-1);
   local tmp2=D[55,1];
   local cbit:1 = tmp[55,1];
@@ -1293,7 +1372,7 @@ inst:"asl" "#"^shift_iiiiii, ashift_S2, D is inst_23_8=0b0000110000011101 & ashi
   calc_flags(0b11111111, cbit, vbit, D==0, D s< 0, 0, 0, 0, 0);
 }
 
-inst:"asl" SSS, ashift_S2_2, D is inst_23_5=0b0000110000011110010 & SSS & ashift_S2_2 & shift_iiiiii & D {
+inst:"asl" SSS,ashift_S2_2,D is inst_23_5=0b0000110000011110010 & SSS & ashift_S2_2 & shift_iiiiii & D {
   local ii:1=zext(SSS[0,6]);
   local tmp1:7=ashift_S2_2 << (ii-1);
   local tmp2=D[55,1];
@@ -1309,14 +1388,14 @@ parinst:"asr" d is inst_7_4=0b0010 & d & kkk=0b010 {
   calc_flags(0b11111111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
 }
 
-inst:"asr" "#"^shift_iiiiii, ashift_S2, D is inst_23_8=0b0000110000011100 & ashift_S2 & shift_iiiiii & D {
+inst:"asr" "#"^shift_iiiiii,ashift_S2,D is inst_23_8=0b0000110000011100 & ashift_S2 & shift_iiiiii & D {
   local tmp=ashift_S2 s>> (shift_iiiiii-1);
   local cbit:1 = tmp[0,1];
   D = ashift_S2 s>> shift_iiiiii;
   calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
 }
 
-inst:"asr" SSS, ashift_S2_2, D is inst_23_5=0b0000110000011110011 & SSS & ashift_S2_2 & shift_iiiiii & D {
+inst:"asr" SSS,ashift_S2_2,D is inst_23_5=0b0000110000011110011 & SSS & ashift_S2_2 & shift_iiiiii & D {
   local ii:1=zext(SSS[0,6]);
   local tmp=ashift_S2_2 s>> (ii-1);
   local cbit:1 = tmp[0,1];
@@ -1353,13 +1432,11 @@ inst:"b"^cc2_name cc2_rn is inst_23_11=0b0000110100011 & cc2_rn & inst_7_4=0b010
 # TODO bchg
 
 # ------------------- BRA ----------------------
-
 inst:"bra" bra_addr24 is inst_23_0=0b000011010001000011000000; bra_addr24 { goto bra_addr24; }
 inst:"bra" bra_addr9  is inst_23_10=0b00000101000011 & inst_5=0 & bra_addr9 { goto bra_addr9; }
 inst:"bra" bra_addr_rn is inst_23_11=0b0000110100011 & inst_7_0=0b11000000 & bra_addr_rn { goto bra_addr_rn; }
 
 # -------------------- BCLR -------------------------
-
 inst:"bclr" "#"^jmp_bbbbb,"x:"^ea1 is (inst_23_14=0b0000101001 & inst_7_5=0b000 & jmp_bbbbb) ... & ea1 {
   local v:3=~(1<<jmp_bbbbb);
   local m:3=*[xmem]:3 ea1 & v;
@@ -1517,24 +1594,6 @@ inst:"brclr" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110011 & ins
   if(cond) goto  bra_addr24;
 }
 
-# ------------------- BSCC ---------------------
-
-inst:"bs"^cc2_name bra_addr24 is inst_23_4=0b00001101000100000000 & cc2_cccc & cc2_name; bra_addr24 {
-  local cond:2=cc2_cccc;
-  calc_cond_call(cond, bra_addr24);
-}
-
-inst:"bs"^cc1_name bra_addr9 is inst_23_16=0b00000101 & inst_11_10=0b00 & inst_5=0 & cc1_cccc & cc1_name & bra_addr9 {
-  local cond:2=cc1_cccc;
-  calc_cond_call(cond, bra_addr9);
-}
-
-inst:"bs"^cc2_name cc2_rn is inst_23_11=0b0000110100011 & cc2_rn & inst_7_4=0b0000 & cc2_name & cc2_cccc {
-  local addr:3=inst_start+cc2_rn;
-  local cond:2=cc2_cccc;
-  calc_cond_call(cond, addr);
-}
-
 # -------------- BRSET ------------------
 inst:"brset" "#"^jmp_bbbbb,"x:"^ea3,bra_addr24 is inst_23_14=0b0000110010 & ea3 & inst_7_5=0b001 & jmp_bbbbb; bra_addr24 {
   local v:3=1<<jmp_bbbbb;
@@ -1622,6 +1681,37 @@ inst:"brset" "#"^jmp_bbbbb,jmp_reg56,bra_addr24 is inst_23_14=0b0000110011 & ins
   if(cond) goto bra_addr24;
 }
 
+
+# ------------------- BSCC ---------------------
+inst:"bs"^cc2_name bra_addr24 is inst_23_4=0b00001101000100000000 & cc2_cccc & cc2_name; bra_addr24 {
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, bra_addr24);
+}
+
+inst:"bs"^cc1_name bra_addr9 is inst_23_16=0b00000101 & inst_11_10=0b00 & inst_5=0 & cc1_cccc & cc1_name & bra_addr9 {
+  local cond:2=cc1_cccc;
+  calc_cond_call(cond, bra_addr9);
+}
+
+inst:"bs"^cc2_name cc2_rn is inst_23_11=0b0000110100011 & cc2_rn & inst_7_4=0b0000 & cc2_name & cc2_cccc {
+  local addr:3=inst_start+cc2_rn;
+  local cond:2=cc2_cccc;
+  calc_cond_call(cond, addr);
+}
+
+# ------------------- BSR ----------------------
+inst:"bsr" bra_addr24 is inst_23_0=0b000011010001000010000000; bra_addr24 { 
+  stack_push(inst_next, sr);
+  call bra_addr24;
+}
+inst:"bsr" bra_addr9  is inst_23_10=0b00000101000010 & inst_5=0 & bra_addr9 { 
+  stack_push(inst_next, sr);
+  call bra_addr9;
+}
+inst:"bsr" bra_addr_rn is inst_23_11=0b0000110100011 & inst_7_0=0b10000000 & bra_addr_rn { 
+  stack_push(inst_next, sr);
+  call bra_addr_rn;
+}
 
 # ---------------- BSCLR ----------------------
 
@@ -2028,97 +2118,115 @@ inst:"clb" clb_S,D is inst_23_2=0b0000110000011110000000 & clb_S & D {
 
 # ---------------------- CMP --------------------------
 # Note, cmp JJJ is encoding 2 on Table 12-16, page 12-20
-parinst:"cmp" JJJ_word, d is inst_7=0 & JJJ_word & JJJ>=4 & kkk=0b101 & d {
-  local s1:7=sext(JJJ_word);
-  s1 = s1 << 24;
+parinst:"cmp" JJJ_word,d is inst_7=0 & JJJ_word & JJJ>=4 & kkk=0b101 & d {
+  local s1:7=0;
+  s1[24,32] = sext(JJJ_word);
   local s2:7=d;
-
-  local t1:8=sext(s1);
-  local t2:8=sext(s2);
-
-  local v:8 = t2 - t1;
-  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
 }
 
-parinst:"cmp" s, d is inst_7=0 & s & JJJ=0 & kkk=0b101 & d {
+parinst:"cmp" s,d is inst_7=0 & s & JJJ=0 & kkk=0b101 & d {
   local s1:7=s;
   local s2:7=d;
-  local t1:8=sext(s1);
-  local t2:8=sext(s2);
-
-  local v:8 = t2 - t1;
-  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
 }
 
 inst:"cmp" "#"^cmp_iiiiii,d is (inst_23_14=0b0000000101 & cmp_iiiiii & inst_7_4=0b1000 & kkk=0b101 & d) {
-  local s1:7=cmp_iiiiii;
-  s1 = s1 << 24;
+  local s1:7=0;
+  local tmp:1=cmp_iiiiii;
+  s1[24,32]=sext(tmp);
   local s2:7=d;
-
-  local t1:8=sext(s1);
-  local t2:8=sext(s2);
-
-  local v:8 = t2 - t1;
-  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
 }
 
 inst:"cmp" "#"^opt_extension,d is (inst_23_14=0b0000000101 & inst_13_8=0 & inst_7_4=0b1100 & kkk=0b101 & d); opt_extension {
   local tmp:3=opt_extension;
-  local s1:7=sext(tmp);
-  s1 = s1 << 24;
+  local s1:7=0;
+  s1[24,32]=sext(tmp);
   local s2:7=d;
-
-  local t1:8=sext(s1);
-  local t2:8=sext(s2);
-
-  local v:8 = t2 - t1;
-  calc_flags(0b11111111, (v & 0xff00000000000000) != 0, (v & 0xff00000000000000) != 0, s1==s2, v[55,1]==1,0,0,0,0);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
 }
 
-inst:"div" JJ, d is inst_23_6=0b000000011000000001 & kkk=0 & JJ & d {
-# TODO flag calc is wrong -- refer to doc.
-  local op:7 = sext($(cf));
-  if (d[39,1] ^ JJ[15,1] == 1) goto <div_1>;
-  goto <div_2>;
-  <div_1>
-  op = op + sext(JJ);
-  calc_flags(0b01111111, carry(d*2, op), scarry(d*2, op), d*2 + op == 0, d*2 + op s< 0, 0, 0, 0, 0);
-  goto <div_end>;
-  <div_2>
-  op = op - sext(JJ);
-  calc_flags(0b01111111, carry(d*2, op), d*2 s< op, d*2 + op == 0, d*2 - op s< 0, 0, 0, 0, 0);
-  <div_end>
-  d = d * 2 + op;
+inst:"cmpm" JJJ_word,d is inst_7=0b0 & inst_2_0=0b111 & JJJ_word & d & JJJ>=4 {
+  local s1:7=0;
+  s1[24,32]=sext(JJJ_word);
+  s1 = abs(s1);
+  local s2:7=abs(d);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
 }
 
-inst:"dmacss" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010010 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"cmpm" s,d is inst_7=0 & s & JJJ=0 & inst_2_0=0b111 & d {
+  local s1:7=abs(s);
+  local s2:7=abs(d);
+  sub_flags(s2,s1);
+  local result = s2-s1;
+  result_flags(result);
+}
+
+inst:"dec" D is inst_23_1=0b00000000000000000000101 & D {
+# TODO flags
+  D = D - 1;
+}
+
+
+#inst:"div" JJ,d is inst_23_6=0b000000011000000001 & kkk=0 & JJ & d {
+## TODO flag calc is wrong -- refer to doc.
+#  local op:7 = sext($(cf));
+#  if (d[39,1] ^ JJ[15,1] == 1) goto <div_1>;
+#  goto <div_2>;
+#  <div_1>
+#  op = op + sext(JJ);
+#  calc_flags(0b01111111, carry(d*2, op), scarry(d*2, op), d*2 + op == 0, d*2 + op s< 0, 0, 0, 0, 0);
+#  goto <div_end>;
+#  <div_2>
+#  op = op - sext(JJ);
+#  calc_flags(0b01111111, carry(d*2, op), d*2 s< op, d*2 + op == 0, d*2 - op s< 0, 0, 0, 0, 0);
+#  <div_end>
+#  d = d * 2 + op;
+#}
+
+inst:"div" JJ,d is inst_23_6=0b000000011000000001 & kkk=0 & JJ & d {
+  d = proc_div_step(d,JJ);
+}
+
+inst:"dmacss" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_6=0b0000000010010010010 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=sext(QQQQ_op2);
 # documentation wrong. should shift 24 bits not 16.
   d_xx = d_xx >> 24; 
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
   d_xx=d_xx+prod;
 }
 
-inst:"dmacsu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010110 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"dmacsu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_6=0b0000000010010010110 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
   d_xx = d_xx >> 24; 
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
   d_xx=d_xx+prod;
 }
 
-inst:"dmacuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_6=0b0000000010010010111 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
+inst:"dmacuu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_6=0b0000000010010010111 & d_xx & mulxx_sgn & QQQQ_op1 & QQQQ_op2 {
   local op1:7=zext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
   d_xx = d_xx >> 24; 
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mulxx_sgn==0) goto <mpy_end>;
   prod=-prod;
   <mpy_end>
@@ -2210,7 +2318,7 @@ inst:"do forever" jmp_addr24 is loopActive=0 & inst_23_0=0b000000000000001000000
 # TODO fv flag in context
 }
 
-inst:"dor" "x:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^ea3,bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2219,7 +2327,7 @@ inst:"dor" "x:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^ea3,bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2228,7 +2336,7 @@ inst:"dor" "y:"^ea3, bra_addr24 is loopActive=0 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^jmp_aaaaaa,bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2238,7 +2346,7 @@ inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^jmp_aaaaaa,bra_addr24 is loopActive=0 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2248,7 +2356,7 @@ inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=0 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=0 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+inst:"dor" "#"^do_imm12,bra_addr24 is loopActive=0 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2257,7 +2365,7 @@ inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=0 & inst_23_16=0b00000110 & do
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg8, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg8,bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2266,7 +2374,7 @@ inst:"dor" jmp_reg8, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg24, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg24,bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2275,7 +2383,7 @@ inst:"dor" jmp_reg24, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg56, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg56,bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=1; loopEnd1=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd1);] 
 {
   stack_push(la, lc);
@@ -2286,7 +2394,7 @@ inst:"dor" jmp_reg56, bra_addr24 is loopActive=0 & inst_23_14=0b0000011011 & jmp
 
 # ------------------------ DO LEVEL 2 -----------------------------
 
-inst:"do" "x:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
+inst:"do" "x:"^ea3,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2295,7 +2403,7 @@ inst:"do" "x:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 &
   la = opt_extension-1;
 }
 
-inst:"do" "y:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+inst:"do" "y:"^ea3,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2304,7 +2412,7 @@ inst:"do" "y:"^ea3, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 &
   la = opt_extension-1;
 }
 
-inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" "x:"^jmp_aaaaaa,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2314,7 +2422,7 @@ inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 
   la = opt_extension-1;
 }
 
-inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+inst:"do" "y:"^jmp_aaaaaa,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2324,7 +2432,7 @@ inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011000 
   la = opt_extension-1;
 }
 
-inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+inst:"do" "#"^do_imm12,jmp_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2333,7 +2441,7 @@ inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg8, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg8,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2342,7 +2450,7 @@ inst:"do" jmp_reg8, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_r
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg24, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg24,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2351,7 +2459,7 @@ inst:"do" jmp_reg24, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg56, jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg56,jmp_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2369,7 +2477,7 @@ inst:"do forever" jmp_addr24 is loopActive=1 & inst_23_0=0b000000000000001000000
 # TODO fv flag in context
 }
 
-inst:"dor" "x:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^ea3,bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2378,7 +2486,7 @@ inst:"dor" "x:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^ea3,bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2387,7 +2495,7 @@ inst:"dor" "y:"^ea3, bra_addr24 is loopActive=1 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^jmp_aaaaaa,bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2397,7 +2505,7 @@ inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^jmp_aaaaaa,bra_addr24 is loopActive=1 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2407,7 +2515,7 @@ inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=1 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+inst:"dor" "#"^do_imm12,bra_addr24 is loopActive=1 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2416,7 +2524,7 @@ inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=1 & inst_23_16=0b00000110 & do
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg8, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg8,bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2425,7 +2533,7 @@ inst:"dor" jmp_reg8, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg24, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg24,bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2434,7 +2542,7 @@ inst:"dor" jmp_reg24, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg56, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg56,bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=2; loopEnd2=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd2);] 
 {
   stack_push(la, lc);
@@ -2445,7 +2553,7 @@ inst:"dor" jmp_reg56, bra_addr24 is loopActive=1 & inst_23_14=0b0000011011 & jmp
 
 # ------------------------ DO LEVEL 3 -----------------------------
 
-inst:"do" "x:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
+inst:"do" "x:"^ea3,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00000000; jmp_addr24 & opt_extension
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2454,7 +2562,7 @@ inst:"do" "x:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 &
   la = opt_extension-1;
 }
 
-inst:"do" "y:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+inst:"do" "y:"^ea3,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2463,7 +2571,7 @@ inst:"do" "y:"^ea3, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 &
   la = opt_extension-1;
 }
 
-inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" "x:"^jmp_aaaaaa,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2473,7 +2581,7 @@ inst:"do" "x:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 
   la = opt_extension-1;
 }
 
-inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
+inst:"do" "y:"^jmp_aaaaaa,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2483,7 +2591,7 @@ inst:"do" "y:"^jmp_aaaaaa, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011000 
   la = opt_extension-1;
 }
 
-inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+inst:"do" "#"^do_imm12,jmp_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2492,7 +2600,7 @@ inst:"do" "#"^do_imm12, jmp_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg8, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg8,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2501,7 +2609,7 @@ inst:"do" jmp_reg8, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_r
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg24, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg24,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2510,7 +2618,7 @@ inst:"do" jmp_reg24, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_
   la = opt_extension-1;
 }
 
-inst:"do" jmp_reg56, jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
+inst:"do" jmp_reg56,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2528,7 +2636,7 @@ inst:"do forever" jmp_addr24 is loopActive=2 & inst_23_0=0b000000000000001000000
 # TODO fv flag in context
 }
 
-inst:"dor" "x:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^ea3,bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2537,7 +2645,7 @@ inst:"dor" "x:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^ea3,bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2546,7 +2654,7 @@ inst:"dor" "y:"^ea3, bra_addr24 is loopActive=2 & inst_23_14=0b0000011001 & ea3 
   la = opt_extension-1;
 }
 
-inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" "x:"^jmp_aaaaaa,bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2556,7 +2664,7 @@ inst:"dor" "x:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
+inst:"dor" "y:"^jmp_aaaaaa,bra_addr24 is loopActive=2 & inst_23_14=0b0000011000 & jmp_aaaaaa & inst_7_0=0b01010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2566,7 +2674,7 @@ inst:"dor" "y:"^jmp_aaaaaa, bra_addr24 is loopActive=2 & inst_23_14=0b0000011000
   la = opt_extension-1;
 }
 
-inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
+inst:"dor" "#"^do_imm12,bra_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1001; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2575,7 +2683,7 @@ inst:"dor" "#"^do_imm12, bra_addr24 is loopActive=2 & inst_23_16=0b00000110 & do
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg8, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg8,bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2584,7 +2692,7 @@ inst:"dor" jmp_reg8, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg24, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg24,bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg24 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2593,7 +2701,7 @@ inst:"dor" jmp_reg24, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp
   la = opt_extension-1;
 }
 
-inst:"dor" jmp_reg56, bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
+inst:"dor" jmp_reg56,bra_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg56 & inst_7_0=0b00010000; bra_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension+inst_start; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
   stack_push(la, lc);
@@ -2616,14 +2724,18 @@ parinst:"eor" JJ,d is inst_7_6=0b01 & kkk=0b011 & d & JJ {
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"eor" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b011 & arith_iiiiii & d {
+inst:"eor" "#"^arith_iiiiii,d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b011 & arith_iiiiii & d {
   d[24,24]=d[24,24] ^ arith_iiiiii;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"eor" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b011 & d; opt_extension {
+inst:"eor" "#"^opt_extension,d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b011 & d; opt_extension {
   d[24,24]=d[24,24] ^ opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+inst:"illegal" is inst_23_0=0b000000000000000000000101 {
+  proc_illegal();
 }
 
 
@@ -2635,7 +2747,7 @@ inst:"inc" D is inst_23_1=0b00000000000000000000100 & D {
   D = D + 1;
 }
 
-inst:"insert" insert_src, qqq, D is (inst_23_7=0b00001100000110110 & qqq & D) ... & insert_src {
+inst:"insert" insert_src,qqq,D is (inst_23_7=0b00001100000110110 & qqq & D) ... & insert_src {
   local off:3=zext(insert_src[0,6]);
   local width:3 =zext(insert_src[12,6]);
   local mask:7=(1<<width)-1;
@@ -3144,14 +3256,14 @@ parinst:"lsl" d is inst_7_4=0b0011 & d & kkk=0b011 {
   calc_flags(0b11001111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
 }
 
-inst:"lsl" "#"^shift_iiiii, D is inst_23_6=0b000011000001111010 & ashift_S2 & shift_iiiii & D {
+inst:"lsl" "#"^shift_iiiii,D is inst_23_6=0b000011000001111010 & ashift_S2 & shift_iiiii & D {
   local tmp1:3=D[24,24]<<(shift_iiiii-1);
   local cbit:1 = tmp1[23,1];
   D[24,24] = tmp1<<1;
   calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
 }
 
-inst:"lsl" SSS, D is inst_23_4=0b00001100000111100001 & SSS & D {
+inst:"lsl" SSS,D is inst_23_4=0b00001100000111100001 & SSS & D {
   local tmp1:3=D[24,24] << (SSS-1);
   local cbit:1 = tmp1[23,1];
   D[24,24] = tmp1<<1;
@@ -3165,14 +3277,14 @@ parinst:"lsr" d is inst_7_4=0b0010 & d & kkk=0b011 {
   calc_flags(0b11001111, cbit, 0, d==0, d s< 0, 0, 0, 0, 0);
 }
 
-inst:"lsr" "#"^shift_iiiii, D is inst_23_6=0b000011000001111011 & ashift_S2 & shift_iiiii & D {
+inst:"lsr" "#"^shift_iiiii,D is inst_23_6=0b000011000001111011 & ashift_S2 & shift_iiiii & D {
   local tmp1:3=D[24,24] >> (shift_iiiii-1);
   local cbit:1 = tmp1[0,1];
   D[24,24] = tmp1>>1;
   calc_flags(0b11111111, cbit, 0, D==0, D s< 0, 0, 0, 0, 0);
 }
 
-inst:"lsr" SSS, D is inst_23_4=0b00001100000111100011 & SSS & D {
+inst:"lsr" SSS,D is inst_23_4=0b00001100000111100011 & SSS & D {
   local tmp1:3=D[24,24] >> (SSS-1);
   local cbit:1 = tmp1[0,1];
   D[24,24] = tmp1>>1;
@@ -3183,68 +3295,75 @@ inst:"lsr" SSS, D is inst_23_4=0b00001100000111100011 & SSS & D {
 
 # ---------------------- LUA ---------------------
 lua_disp:lua_addr is lua_aaa & lua_aaaa [lua_addr=(lua_aaa<<4)+lua_aaaa;] { local tmp:3=lua_addr; export tmp; }
-inst:"lua" ea4_lua, lua_reg8  is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg8  { lua_reg8=ea4_lua[0,8]; }
-inst:"lua" ea4_lua, lua_reg24 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg24 { lua_reg24=ea4_lua; }
-inst:"lua" ea4_lua, lua_reg56 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg56 { lua_reg56=zext(ea4_lua); }
-inst:"lua" (lua_rrr+lua_disp), lua_dddd is inst_23_14=0b0000010000 & lua_rrr & lua_disp & lua_dddd { lua_dddd = lua_rrr + lua_disp; }
+inst:"lua" ea4_lua,lua_reg8  is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg8  { lua_reg8=ea4_lua[0,8]; }
+inst:"lua" ea4_lua,lua_reg24 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg24 { lua_reg24=ea4_lua; }
+inst:"lua" ea4_lua,lua_reg56 is inst_23_13=0b00000100010 & ea4_lua & inst_7_5=0 & lua_reg56 { lua_reg56=zext(ea4_lua); }
+inst:"lua" (lua_rrr+lua_disp),lua_dddd is inst_23_14=0b0000010000 & lua_rrr & lua_disp & lua_dddd { lua_dddd = lua_rrr + lua_disp; }
 
-parinst:"mac" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b10 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mac" mul_sgn^QQQ_op1,QQQ_op2,d is inst_7=1 & inst_1_0=0b10 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mul_sgn==0) goto <mac_end>;
   prod = -prod;
   <mac_end>
-  prod = prod << 1;
   d = d + prod;
 }
 
 # TODO MAC format & opcodes 2 with a short immediate operand
 
-inst:"maci" mul_sgn^"#"^opt_extension*qq, d is inst_23_6=0b000000010100000111 & inst_1_0=0b10 & mul_sgn & d & qq; opt_extension {
+inst:"maci" mul_sgn^"#"^opt_extension,qq,d is inst_23_6=0b000000010100000111 & inst_1_0=0b10 & mul_sgn & d & qq; opt_extension {
   local op1:7=sext(qq);
   local op2_:6=opt_extension;
   local op2:7=sext(op2_);
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mul_sgn==0) goto <maci_end>;
   prod = -prod;
   <maci_end>
-  prod = prod << 1;
   d = d + prod;
 }
 
-parinst:"macr" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b11 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"macr" mul_sgn^QQQ_op1,QQQ_op2,d is inst_7=1 & inst_1_0=0b11 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
-  local prod:7=op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mul_sgn==0) goto <mac_end>;
   prod = -prod;
   <mac_end>
-  prod = prod << 1;
+  d = d + prod;
+  proc_round(d);
+}
+
+inst:"macri" mul_sgn^"#"^opt_extension,qq,d is inst_23_6=0b000000010100000111 & inst_1_0=0b11 & mul_sgn & d & qq; opt_extension {
+  local op1:7=sext(qq);
+  local op2_:6=opt_extension;
+  local op2:7=sext(op2_);
+  local prod:7=(op1*op2) << 1;
+  if (mul_sgn==0) goto <maci_end>;
+  prod = -prod;
+  <maci_end>
   d = d + prod;
   proc_round(d);
 }
 
 
-inst:"macsu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001101 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
+inst:"macsu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_7=0b00000001001001101 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  local prod:7 = op1*op2;
+  local prod:7=(op1*op2) << 1;
   if (mulxx_sgn==0) goto <mpy_end>;
   prod = -prod;
   <mpy_end>
-  prod = prod << 1;
   d_xx = d_xx + prod;
 }
 
-inst:"macuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001101 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
+inst:"macuu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_7=0b00000001001001101 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
   local op1:7=zext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
   local prod:7 = op1*op2;
   if (mulxx_sgn==0) goto <mpy_end>;
   prod = -prod;
   <mpy_end>
-  prod = prod << 1;
   d_xx = d_xx + prod;
 }
 
@@ -3268,57 +3387,64 @@ inst:"merge" SSS,D is inst_23_4=0b00001100000110111000 & SSS & D {
   calc_flags(0b00001110, 0, 0, D[24,12]==0, D[24,1]==1, 0, 0, 0, 0);
 }
 
-parinst:"mpy" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mpy" mul_sgn^QQQ_op1,QQQ_op2,d is inst_7=1 & inst_1_0=0 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
-  d = op1*op2;
+  d = (op1*op2) << 1;
   if (mul_sgn==0) goto <mpy_end>;
   d = -d;
-  d = d << 1;
   <mpy_end>
 }
 
-inst:"mpyi" mul_sgn^"#"^opt_extension*qq, d is inst_23_6=0b000000010100000111 & inst_1_0=0b00 & mul_sgn & d & qq; opt_extension {
+inst:"mpyi" mul_sgn^"#"^opt_extension,qq,d is inst_23_6=0b000000010100000111 & inst_1_0=0b00 & mul_sgn & d & qq; opt_extension {
   local op1:7=sext(qq);
   local op2_:6=opt_extension;
   local op2:7=sext(op2_);
-  local prod:7=op1*op2;
+  d = (op1*op2) << 1;
   if (mul_sgn==0) goto <mpyi_end>;
-  prod = -prod;
+  d = -d;
   <mpyi_end>
-  d = prod << 1;
 }
 
 
-parinst:"mpyr" mul_sgn^QQQ_op1*QQQ_op2, d is inst_7=1 & inst_1_0=0b01 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
+parinst:"mpyr" mul_sgn^QQQ_op1,QQQ_op2,d is inst_7=1 & inst_1_0=0b01 & mul_sgn & d & QQQ_op1 & QQQ_op2 {
   local op1:7=sext(QQQ_op1);
   local op2:7=sext(QQQ_op2);
-  d = op1*op2;
+  d = (op1*op2) << 1;
   if (mul_sgn==0) goto <mpyr_end>;
   d = -d;
   <mpyr_end>
-  d = d << 1;
   proc_round(d);
 }
 
-inst:"mpysu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001111 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
-  local op1:7=sext(QQQQ_op1);
-  local op2:7=zext(QQQQ_op2);
-  d_xx = op1*op2;
-  if (mulxx_sgn==0) goto <mpy_end>;
-  d_xx = -d_xx;
-  <mpy_end>
-  d_xx = d_xx << 1;
+inst:"mpyri" mul_sgn^"#"^opt_extension,qq,d is inst_23_6=0b000000010100000111 & inst_1_0=0b01 & mul_sgn & d & qq; opt_extension {
+  local op1:7=sext(qq);
+  local op2_:6=opt_extension;
+  local op2:7=sext(op2_);
+  d = (op1*op2) << 1;
+  if (mul_sgn==0) goto <mpyi_end>;
+  d = -d;
+  <mpyi_end>
+  proc_round(d);
 }
 
-inst:"mpyuu" mulxx_sgn^QQQQ_op1*QQQQ_op2, d_xx is inst_23_7=0b00000001001001111 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
-  local op1:7=zext(QQQQ_op1);
+
+inst:"mpysu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_7=0b00000001001001111 & inst_6=0 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=sext(QQQQ_op1);
   local op2:7=zext(QQQQ_op2);
-  d_xx = op1*op2;
+  d_xx = (op1*op2) << 1;
   if (mulxx_sgn==0) goto <mpy_end>;
   d_xx = -d_xx;
   <mpy_end>
-  d_xx = d_xx << 1;
+}
+
+inst:"mpyuu" mulxx_sgn^QQQQ_op1,QQQQ_op2,d_xx is inst_23_7=0b00000001001001111 & inst_6=1 & mulxx_sgn & d_xx & QQQQ_op1 & QQQQ_op2 {
+  local op1:7=zext(QQQQ_op1);
+  local op2:7=zext(QQQQ_op2);
+  d_xx = (op1*op2) << 1;
+  if (mulxx_sgn==0) goto <mpy_end>;
+  d_xx = -d_xx;
+  <mpy_end>
 }
 
 parinst:"neg" d is inst_7_4=0b0011 & kkk=0b110 & d {
@@ -3326,7 +3452,7 @@ parinst:"neg" d is inst_7_4=0b0011 & kkk=0b110 & d {
   calc_flags(0b11111110, 0, 0, d==0, d s< 0, 0, 0, 0, 0);
 }
 
-inst:"normf" SSS, D is inst_23_4=0b00001100000111100010 & SSS & D {
+inst:"normf" SSS,D is inst_23_4=0b00001100000111100010 & SSS & D {
 # TODO flags
   local sss_:3=SSS;
   if (sss_ s>= 0) goto <normf_asr>;
@@ -3338,24 +3464,33 @@ inst:"normf" SSS, D is inst_23_4=0b00001100000111100010 & SSS & D {
   <normf_end>
 }
 
+parinst:"not" d is inst_7_4=0b0001 & d & kkk=0b111 {
+  d[24,24]=~d[24,24];
+  calc_flags(0b11001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
+}
+
+
 parinst:"or" JJ,d is inst_7_6=0b01 & kkk=0b010 & d & JJ {
   d[24,24]=d[24,24] | JJ;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"or" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b010 & arith_iiiiii & d {
+inst:"or" "#"^arith_iiiiii,d is inst_23_14=0b0000000101 & inst_7_4=0b1000 & kkk=0b010 & arith_iiiiii & d {
   d[24,24]=d[24,24] | arith_iiiiii;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"or" "#"^opt_extension, d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b010 & d; opt_extension {
+inst:"or" "#"^opt_extension,d is inst_23_14=0b0000000101 & inst_7_4=0b1100 & kkk=0b010 & d; opt_extension {
   d[24,24]=d[24,24] | opt_extension;
   calc_flags(0b10001110, 0, 0, d[24, 24] == 0, d[47,1], 0, 0, 0, 0);
 }
 
-inst:"ori" "#"^iiiiiiii, EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b111110 & EE { EE = EE | iiiiiiii; }
+inst:"ori" "#"^iiiiiiii,EE is inst_23_16=0 & iiiiiiii & inst_7_2=0b111110 & EE { EE = EE | iiiiiiii; }
 
 inst:"pflush" is inst_23_0=0b000000000000000000000011 { proc_pflush(); }
+inst:"pflushun" is inst_23_0=0b000000000000000000000001 { proc_pflushun(); }
+inst:"pfree" is inst_23_0=0b000000000000000000000010 { proc_pfree(); }
+inst:"reset" is inst_23_0=0b000000000000000010000100 { proc_reset(); }
 
 inst:"rep x:"^ea3 is inst_23_14=0b0000011001 & inst_7_0=0b00100000 & ea3 [repActive=1; globalset(inst_next, repActive);] {
   temp_reg = lc;
@@ -3399,6 +3534,22 @@ inst:"rep" jmp_reg56 is inst_23_14=0b0000011011 & inst_7_0=0b00100000 & jmp_reg5
   lc = jmp_reg56[24,24];
 }
 
+parinst:"rnd" d is inst_7_4=0b0001 & inst_2_0=0b001 & d {
+  proc_round(d);
+}
+
+parinst:"rol" d is inst_7_4=0b0011 & inst_2_0=0b111 & d {
+  local tmp_cf=$(cf);
+  $(cf)=d[47,1];
+  d[24,24]=(d[24,24]<<1) | zext(tmp_cf);
+}
+
+parinst:"ror" d is inst_7_4=0b0010 & inst_2_0=0b111 & d {
+  local tmp_cf:3=zext($(cf))<<23;
+  $(cf)=d[24,1];
+  d[24,24]=(d[24,24]>>1) | tmp_cf;
+}
+
 inst:"rti" is inst_23_0=0b000000000000000000000100 { 
   stack_pop(pc, sr);
   return [pc];
@@ -3412,7 +3563,7 @@ inst:"rts" is inst_23_0=0b000000000000000000001100 {
 
 # ---------------- SUB ---------------------
 
-parinst:"sbc" J, d is inst_7_5=0b001 & kkk=0b101 & J & d {
+parinst:"sbc" J,d is inst_7_5=0b001 & kkk=0b101 & J & d {
   local tmp1:7=zext(J);
   local tmp2:7=zext($(cf));
   local sum:7=tmp1+tmp2;
@@ -3420,14 +3571,14 @@ parinst:"sbc" J, d is inst_7_5=0b001 & kkk=0b101 & J & d {
   d = d - sum;
 }
 
-parinst:"sub" JJJ_word, d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0b100 {
-  local op:7=sext(JJJ_word);
-  op = op << 24;
+parinst:"sub" JJJ_word,d is inst_7=0 & JJJ_word & d & JJJ>=4 & kkk=0b100 {
+  local op:7=0;
+  op[24,32]=sext(JJJ_word);
   calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
   d = d - op;
 }
 
-parinst:"sub" JJJ_long, d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0b100 {
+parinst:"sub" JJJ_long,d is inst_7=0 & JJJ_long & d & (JJJ=2|JJJ=3) & kkk=0b100 {
   local op:7=sext(JJJ_long);
   calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
   d = d - op;
@@ -3439,31 +3590,36 @@ parinst:"sub" s,d is s & d & inst_7=0 & JJJ=1 & kkk=0b100 {
   d = d - op;
 }
 
-inst:"sub" "#"^arith_iiiiii, d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0b100 & arith_iiiiii & d {
-  local op:7=arith_iiiiii;
-  op = op << 24;
+inst:"sub" "#"^arith_iiiiii,d is inst_23_14=0b0000000101 & inst_7=1 & JJJ=0 & kkk=0b100 & arith_iiiiii & d {
+  local op:7=0;
+  local tmp:1=arith_iiiiii;
+  op[24,32]=tmp;
   calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
   d = d - op;
 }
 
-inst:"sub" "#"^opt_extension, d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b100 & d ; opt_extension {
+inst:"sub" "#"^opt_extension,d is inst_23_14=0b0000000101 & arith_iiiiii=0 & inst_7=1 & JJJ=0b100 & kkk=0b100 & d ; opt_extension {
   local tmp:3=opt_extension;
-  local op:7=sext(tmp);
-  op = op << 24;
+  local op:7=0;
+  op[24,32]=sext(tmp);
   calc_flags(0b11111111, sborrow(d, op), sborrow(d, op), op==d, (d-op) s< 0, 0, 0, 0, 0);
   d = d - op;
 }
 
-parinst:"subl" s, d is inst_7=0 & JJJ=0b001 & kkk=0b110 & s & d {
+parinst:"subl" s,d is inst_7=0 & JJJ=0b001 & kkk=0b110 & s & d {
   local op:7=d*2;
   calc_flags(0b11111111, sborrow(op, s), carry(d, d) | sborrow(op, s), op==s, (op-s) s< 0, 0, 0, 0, 0);
   d = op - s;
 }
 
-parinst:"subr" s, d is inst_7_4=0b0000 & kkk=0b110 & s & d {
+parinst:"subr" s,d is inst_7_4=0b0000 & kkk=0b110 & s & d {
   local op:7=d/2;
   calc_flags(0b11111111, sborrow(op, s), sborrow(op, s), op==s, (op-s) s< 0, 0, 0, 0, 0);
   d = op - s;
+}
+
+inst:"stop" is inst_23_0=0b000000000000000010000111 {
+  proc_stop();
 }
 
 # cannot send local label into a macro...
@@ -3492,12 +3648,12 @@ tcc_s2: is tcc_form1 { local tmp:3=0; export tmp; }
 tcc_d2: is tcc_form1 { local tmp:3=0; export tmp; }
 
 # joint form
-tcc_sd1: tcc_s1, tcc_d1 is tcc_en1 & tcc_s1 & tcc_d1 {}
+tcc_sd1: tcc_s1,tcc_d1 is tcc_en1 & tcc_s1 & tcc_d1 {}
 tcc_sd1: is tcc_form3 {}
-tcc_sd2: tcc_s2, tcc_d2 is tcc_en2 & tcc_s2 & tcc_d2 {}
+tcc_sd2: tcc_s2,tcc_d2 is tcc_en2 & tcc_s2 & tcc_d2 {}
 tcc_sd2: is tcc_form1 {}
 
-inst:"t"^cc1_name tcc_sd1 tcc_sd2 is tcc_sd1 & tcc_sd2 & tcc_s1 & tcc_d1 & tcc_s2 & tcc_d2 & cc1_name & cc1_cccc {
+inst:"t"^cc1_name tcc_sd1,tcc_sd2 is tcc_sd1 & tcc_sd2 & tcc_s1 & tcc_d1 & tcc_s2 & tcc_d2 & cc1_name & cc1_cccc {
   local cond:1=cc1_cccc;
   if
   ( ($(cf)==0 & cond==0b0000)
@@ -3524,15 +3680,49 @@ inst:"t"^cc1_name tcc_sd1 tcc_sd2 is tcc_sd1 & tcc_sd2 & tcc_s1 & tcc_d1 & tcc_s
   <tcc_end>
 }
 
-parinst:"tfr" JJJ_word, d is inst_7=0 & JJJ_word & JJJ >=4 & d & kkk=0b001 {
+parinst:"tfr" JJJ_word,d is inst_7=0 & JJJ_word & JJJ >=4 & d & kkk=0b001 {
   d = zext(JJJ_word);
 }
 
-parinst:"tfr" s, d is inst_7=0 & JJJ=0 & s & d & kkk=0b001 {
+parinst:"tfr" s,d is inst_7=0 & JJJ=0 & s & d & kkk=0b001 {
   d = s;
 }
 
 parinst:"tst" d is inst_7_4=0b0000 & kkk=0b011 & d { calc_flags(0b11111110, 0, 0, d==0, d s< 0, 0, 0, 0, 0); }
+
+inst:"trap" is inst_23_0=0b000000000000000000000110 { proc_trap(); }
+inst:"trap"^trap_cccc_name is inst_23_4=0b00000000000000000001 & trap_cccc_name & trap_cccc {
+  local cond:1=trap_cccc;
+  if
+  ( ($(cf)==0 & cond==0b0000)
+  | ($(cf)==1 & cond==0b1000)
+  | ($(ef)==0 & cond==0b0101)
+  | ($(zf)==1 & cond==0b1010)
+  | ($(ef)==1 & cond==0b1101)
+  | (($(nf)^$(vf))==0 & cond==0b0001)
+  | (($(zf)+($(nf)^$(vf)))==0 & cond==0b0111)
+  | ($(lf)==0 & cond==0b0110)
+  | (($(zf)+($(nf)^$(vf)))==1 & cond==0b1111)
+  | ($(lf)==1 & cond==0b1110)
+  | (($(nf)^$(vf))==1 & cond==0b1001)
+  | ($(nf)==1 & cond==0b1011)
+  | ($(zf)==0 & cond==0b0010)
+  | ($(zf)+(!$(uf) & !$(ef))==1 & cond==0b1100)
+  | ($(nf)==0 & cond==0b0011)
+  | ($(zf)+(!$(uf) & !$(ef))==0 & cond==0b0100)
+  ) goto <trap_call>;
+  goto <trap_end>;
+  <trap_call>
+  proc_trap();
+  <trap_end>
+}
+
+inst:"wait" is inst_23_0=0b000000000000000010000110 { proc_wait(); }
+inst:"vsl" vsl_S,vsl_i,"L:"^ea1 is (inst_23_17=0b0000101 & inst_15_14=0b11 & inst_7_5=0b110 & inst_3_0=0b0000 & vsl_S & vsl_i) ... & ea1 {
+  *[xmem]:3 ea1 = vsl_S[24,24];
+  *[ymem]:3 ea1 = (vsl_S[0,24] << 1) | vsl_i;
+  # TODO flags
+}
 
 # Put these instructions at the bottom, as they may accidently create positive matches for other instructions
 # The Ghidra sleigh parser doesn't traverse through all the possibilities.
@@ -3545,8 +3735,8 @@ inst:"nop" is inst_23_8=0b0000000000000000 & opcode=0b00000000 {}
 # Master Instruction Rule: parallel move/condition
 inst:parinst parMove parCond is parinst ... & parMove & parCond ... { 
   build parCond;
-  build parMove;
   build parinst;
+  build parMove;
 }
 
 # Master Instruction Rule: hardware loop control
