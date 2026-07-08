@@ -908,7 +908,7 @@ ea1:(ea1_rrr_rn)                            is ea1_mmm=0b100 & ea1_rrr_rn       
 ea1:(ea1_rrr_rn+ea1_rrr_nn)                 is ea1_mmm=0b101 & ea1_rrr_rn & ea1_rrr_nn { local tmp=ea1_rrr_rn+ea1_rrr_nn; export tmp; }
 ea1:-(ea1_rrr_rn)                           is ea1_mmm=0b111 & ea1_rrr_rn              { ea1_rrr_rn = ea1_rrr_rn - 1; export ea1_rrr_rn; }
 ea1:opt_extension                           is ea1_mmmrrr=0b110000; opt_extension      { local tmp:3 = opt_extension; export tmp; }
-ea1_imm24:"#"^opt_extension                 is ea1_mmmrrr=0b110100; opt_extension      { local tmp:3 = opt_extension; export tmp; }
+ea1_imm24:"#>"^opt_extension                is ea1_mmmrrr=0b110100; opt_extension      { local tmp:3 = opt_extension; export tmp; }
 
 # Effective Addressing Mode Encoding 3: page 12-19
 ea3:(ea3_rrr_rn)-ea3_rrr_nn                 is ea3_mmm=0b000 & ea3_rrr_rn & ea3_rrr_nn { local tmp:3=ea3_rrr_rn; ea3_rrr_rn = ea3_rrr_rn - ea3_rrr_nn; export tmp; }
@@ -959,8 +959,8 @@ imm8mov_reg24:imm8mov_ddddd_word is (imm8mov_ddddd>3 & imm8mov_ddddd!=10 & imm8m
 imm8mov_reg56:imm8mov_ddddd_long is (imm8mov_ddddd=14|imm8mov_ddddd=15) & imm8mov_ddddd_long { export imm8mov_ddddd_long; }
 
 parMove:"#"^iiiiiiii,imm8mov_reg8  is iiiiiiii & imm8mov_reg8 & inst_23_21=0b001 { imm8mov_reg8=iiiiiiii;  }
-parMove:"#"^iiiiiiii,imm8mov_reg24 is iiiiiiii & imm8mov_reg24 & inst_23_21=0b001 { imm8mov_reg24=iiiiiiii;  }
-parMove:"#"^iiiiiiii,imm8mov_reg56 is iiiiiiii & imm8mov_reg56 & inst_23_21=0b001 { acc_write_unsigned24(imm8mov_reg56, iiiiiiii); }
+parMove:"#"^iiiiiiii,imm8mov_reg24 is iiiiiiii & imm8mov_reg24 & inst_23_21=0b001 { local imm:3 = iiiiiiii; imm8mov_reg24 = imm << 16; }
+parMove:"#"^iiiiiiii,imm8mov_reg56 is iiiiiiii & imm8mov_reg56 & inst_23_21=0b001 { local imm:3 = iiiiiiii; acc_write_unsigned24(imm8mov_reg56, imm << 16); }
 
 # Register to Register Data Move
 r2rmov_src8:r2rmov_eeeee_byte is (r2rmov_eeeee=10|r2rmov_eeeee=11) & r2rmov_eeeee_byte { export r2rmov_eeeee_byte; }
@@ -1395,10 +1395,13 @@ jmp_ea24:opt_extension is ea1_mmmrrr=0b110000; opt_extension { export *[progmem]
 # Used by: JMP ea3, JSR ea3, Jcc ea3, JScc ea3
 jmp_ea3:ea3 is ea3 { local tmp:3 = ea3; export tmp; }
 
-mulxx_sgn: is k_xx=0 & k_xx_ { local tmp:1=k_xx_; export tmp; }
+mulxx_sgn:"+" is k_xx=0 & k_xx_ { local tmp:1=k_xx_; export tmp; }
 mulxx_sgn:"-" is k_xx=1 & k_xx_ { local tmp:1=k_xx_; export tmp; }
 
-mul_sgn: is k=0 & k_ { local tmp:1=k_; export tmp; }
+# k bit: 0 = positive, 1 = negative (FM56000, MPY/MAC formats)
+# Explicitly emit the '+' for the positive form so the disassembler
+# cannot silently drift into the negative variant due to field aliasing.
+mul_sgn:"+" is k=0 & k_ { local tmp:1=k_; export tmp; }
 mul_sgn:"-" is k=1 & k_ { local tmp:1=k_; export tmp; }
 
 # MAC Format 2 immediate - power of 2 encoding (ssss bits 11-8)
@@ -2919,6 +2922,15 @@ inst:"do" "#"^do_imm12,jmp_addr24 is loopActive=2 & inst_23_16=0b00000110 & do_i
   la = opt_extension-1;
 }
 
+inst:"do" "#"^do_imm12,jmp_addr24 is loopActive=3 & inst_23_16=0b00000110 & do_imm12 & inst_7_4=0b1000; jmp_addr24 & opt_extension 
+  [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
+{
+  stack_push(la, lc);
+  lc = do_imm12;
+  stack_push(inst_next, sr);
+  la = opt_extension-1;
+}
+
 inst:"do" jmp_reg8,jmp_addr24 is loopActive=2 & inst_23_14=0b0000011011 & jmp_reg8 & inst_7_0=0b00000000; jmp_addr24 & opt_extension 
   [loopActive=3; loopEnd3=opt_extension; loopCaptureStart=1; globalset(inst_next, loopCaptureStart); globalset(inst_next, loopActive); globalset(inst_next, loopEnd3);] 
 {
@@ -4378,4 +4390,3 @@ loopedinst:inst is inst & loopActive=0 & repActive=1 [repActive=0; globalset(ins
 loopedinst:inst is inst {}
 
 :^loopedinst is loopedinst [loopCur=inst_start;] {}
-
